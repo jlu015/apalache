@@ -4,9 +4,9 @@ import java.io.{FileWriter, PrintWriter}
 
 import at.forsyte.apalache.tla.bmcmt.analyses.{ExprGradeStore, FreeExistentialsStore}
 import at.forsyte.apalache.tla.bmcmt.caches.ExprCache
-import at.forsyte.apalache.tla.bmcmt.types.FailPredT
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.convenience.tla
+import at.forsyte.apalache.tla.types.tsa.FailPredT
 import com.typesafe.scalalogging.LazyLogging
 
 /**

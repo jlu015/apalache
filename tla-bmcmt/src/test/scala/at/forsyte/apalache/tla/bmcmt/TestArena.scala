@@ -1,6 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.types.{BoolT, FinSetT, UnknownT}
+import at.forsyte.apalache.tla.types.tsa.{BoolT, FinSetT, UnknownT}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

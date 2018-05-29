@@ -1,9 +1,13 @@
-package at.forsyte.apalache.tla.bmcmt
+package at.forsyte.apalache.tla.types
 
 import scala.collection.immutable.SortedMap
 
-/** Change name, too ambiguous, especially with TLA Types in the other package -- Jure, 29.10.17 */
-package object types {
+/**
+  * Since we do not have a good name for this type system, let's call it Type System A.
+  *
+  * @author konnov
+  */
+package object tsa {
 
   /**
     * A simple type system for the symbolic memory cells.

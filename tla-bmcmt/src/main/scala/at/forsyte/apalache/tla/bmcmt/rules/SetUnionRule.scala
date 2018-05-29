@@ -2,10 +2,11 @@ package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.implicitConversions._
-import at.forsyte.apalache.tla.bmcmt.types.FinSetT
 import at.forsyte.apalache.tla.lir.OperEx
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.oper.{TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.types.TypeException
+import at.forsyte.apalache.tla.types.tsa.FinSetT
 
 /**
   * Implements the rule: SE-UNION, that is, a union of all set elements.

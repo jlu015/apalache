@@ -21,12 +21,14 @@
     <modules>
         <!-- intermediate representation (IR) -->
         <module>tlair</module>
-        <!-- parsing with SANY and build an IR -->
+        <!-- passes, logging, etc. -->
         <module>mod-infra</module>
-        <!-- finding symbolic transitions -->
+        <!-- parsing with SANY and build an IR -->
         <module>tla-import</module>
         <!-- finding symbolic transitions -->
         <module>tla-assignments</module>
+        <!-- inferring types -->
+        <module>tla-types</module>
         <!-- bounded model checker modulo theory -->
         <module>tla-bmcmt</module>
         <!-- command line tools -->

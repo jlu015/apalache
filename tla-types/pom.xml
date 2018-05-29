@@ -8,10 +8,10 @@
         <version>0.1-SNAPSHOT</version>
     </parent>
 
-    <artifactId>tla-bmcmt</artifactId>
+    <artifactId>tla-types</artifactId>
     <packaging>jar</packaging>
 
-    <name>tla-bmcmt</name>
+    <name>tla-types</name>
     <url>https://github.com/konnov/apalache</url>
 
     <dependencies>
@@ -33,11 +33,6 @@
         <dependency>
             <groupId>at.forsyte.apalache</groupId>
             <artifactId>tla-assignments</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>at.forsyte.apalache</groupId>
-            <artifactId>tla-types</artifactId>
             <version>${project.version}</version>
         </dependency>
 

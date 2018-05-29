@@ -1,8 +1,8 @@
 package at.forsyte.apalache.tla.bmcmt.caches
 
-import at.forsyte.apalache.tla.bmcmt.types.ConstT
 import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, SolverContext}
 import at.forsyte.apalache.tla.lir.convenience.tla
+import at.forsyte.apalache.tla.types.tsa.ConstT
 
 /**
   * A cache for string constants that are translated as uninterpreted constants in SMT.

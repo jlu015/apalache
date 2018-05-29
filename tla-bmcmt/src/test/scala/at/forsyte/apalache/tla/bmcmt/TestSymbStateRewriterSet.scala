@@ -1,10 +1,10 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.types.{BoolT, IntT}
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.lir.oper.{TlaArithOper, TlaBoolOper, TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.values.{TlaFalse, TlaInt, TlaTrue}
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx, TlaEx, ValEx}
+import at.forsyte.apalache.tla.types.tsa.{BoolT, IntT}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

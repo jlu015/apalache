@@ -2,10 +2,10 @@ package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.implicitConversions._
-import at.forsyte.apalache.tla.bmcmt.types.{BoolT, ConstT, IntT}
 import at.forsyte.apalache.tla.lir.OperEx
 import at.forsyte.apalache.tla.lir.control.TlaControlOper
 import at.forsyte.apalache.tla.lir.convenience._
+import at.forsyte.apalache.tla.types.tsa.{BoolT, ConstT, IntT}
 
 
 /**

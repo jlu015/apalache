@@ -1,8 +1,8 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.types.{FinSetT, IntT, PowSetT}
 import at.forsyte.apalache.tla.lir.NameEx
 import at.forsyte.apalache.tla.lir.convenience.tla
+import at.forsyte.apalache.tla.types.tsa.{FinSetT, IntT, PowSetT}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

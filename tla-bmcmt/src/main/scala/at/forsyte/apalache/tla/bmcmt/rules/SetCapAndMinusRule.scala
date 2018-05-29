@@ -4,6 +4,7 @@ import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.lir.convenience._
 import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
+import at.forsyte.apalache.tla.types.{TypeException, tsa}
 
 /**
   * Implements the rules SE-SET-CAP1 and SE-SET-DIFF1, that is, set intersection and set difference respectively.
@@ -47,7 +48,7 @@ class SetCapAndMinusRule(rewriter: SymbStateRewriter) extends RewritingRule {
     val leftElemCells = leftState.arena.getHas(leftSetCell)
     val rightElemCells = rightState.arena.getHas(rightSetCell)
     // introduce a new set
-    val newType = types.unify(leftSetCell.cellType, rightSetCell.cellType)
+    val newType = tsa.unify(leftSetCell.cellType, rightSetCell.cellType)
     if (newType.isEmpty) {
       throw new TypeException(s"Failed to unify types ${leftSetCell.cellType} and ${rightSetCell.cellType} when rewriting ${state.ex}")
     }

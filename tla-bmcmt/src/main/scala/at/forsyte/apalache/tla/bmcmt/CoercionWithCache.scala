@@ -1,8 +1,8 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.types.{BoolT, IntT}
 import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper}
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx}
+import at.forsyte.apalache.tla.types.tsa.{BoolT, IntT}
 
 /**
   * Coercion from one theory to another. The coercion results are cached, and thus

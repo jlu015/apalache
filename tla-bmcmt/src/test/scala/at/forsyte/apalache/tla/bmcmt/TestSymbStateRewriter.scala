@@ -1,9 +1,9 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.types._
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.values.TlaInt
+import at.forsyte.apalache.tla.types.tsa._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

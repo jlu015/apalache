@@ -1,9 +1,10 @@
 package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.types.{FinSetT, UnknownT}
 import at.forsyte.apalache.tla.lir.oper.TlaSetOper
 import at.forsyte.apalache.tla.lir.{OperEx, TlaEx}
+import at.forsyte.apalache.tla.types.tsa.{FinSetT, UnknownT}
+import at.forsyte.apalache.tla.types.{TypeException, tsa}
 
 /**
   * Implements the rules: SE-SET-CTOR[1-2].
@@ -53,7 +54,7 @@ class SetCtorRule(rewriter: SymbStateRewriter) extends RewritingRule {
         hd
 
       case list@_ =>
-        val unif = list.map(Some(_)).reduce(types.unifyOption)
+        val unif = list.map(Some(_)).reduce(tsa.unifyOption)
         if (unif.nonEmpty)
           unif.get
         else

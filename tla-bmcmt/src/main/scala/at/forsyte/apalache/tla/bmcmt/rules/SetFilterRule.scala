@@ -1,9 +1,10 @@
 package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
-import at.forsyte.apalache.tla.bmcmt.types.{FinSetT, UnknownT}
 import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper, TlaSetOper}
 import at.forsyte.apalache.tla.lir.{NameEx, NullEx, OperEx, TlaEx}
+import at.forsyte.apalache.tla.types.tsa.{FinSetT, UnknownT}
+import at.forsyte.apalache.tla.types.{TypeException, tsa}
 
 /**
   * Implements the rules: SE-SET-FILTER[1-2].
@@ -61,7 +62,7 @@ class SetFilterRule(rewriter: SymbStateRewriter) extends RewritingRule {
           if (filteredCellsAndPreds.isEmpty) {
             Some(UnknownT())
           } else {
-            types.unify(filteredCellsAndPreds.map(_._1.cellType): _*)
+            tsa.unify(filteredCellsAndPreds.map(_._1.cellType): _*)
           }
 
         if (unifier.isEmpty) {

@@ -3,6 +3,7 @@ package at.forsyte.apalache.tla.bmcmt.rules
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.lir.OperEx
 import at.forsyte.apalache.tla.lir.oper.{TlaBoolOper, TlaOper, TlaSetOper}
+import at.forsyte.apalache.tla.types.{TypeException, tsa}
 
 /**
   * Implements the rule: SE-SET-CUP1, that is, a union of two sets.
@@ -28,7 +29,7 @@ class SetCupRule(rewriter: SymbStateRewriter) extends RewritingRule {
         val leftElemCells = leftState.arena.getHas(leftSetCell)
         val rightElemCells = rightState.arena.getHas(rightSetCell)
         // introduce a new set
-        val newType = types.unify(leftSetCell.cellType, rightSetCell.cellType)
+        val newType = tsa.unify(leftSetCell.cellType, rightSetCell.cellType)
         if (newType.isEmpty) {
           throw new TypeException(s"Failed to unify types ${leftSetCell.cellType} and ${rightSetCell.cellType} when rewriting ${state.ex}")
         }

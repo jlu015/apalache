@@ -1,9 +1,9 @@
 package at.forsyte.apalache.tla.bmcmt.caches
 
 import at.forsyte.apalache.tla.bmcmt.implicitConversions._
-import at.forsyte.apalache.tla.bmcmt.types.{ConstT, FinSetT}
 import at.forsyte.apalache.tla.bmcmt.{Arena, ArenaCell, SolverContext}
 import at.forsyte.apalache.tla.lir.convenience.tla
+import at.forsyte.apalache.tla.types.tsa.{ConstT, FinSetT}
 
 import scala.collection.immutable.SortedSet
 

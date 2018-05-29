@@ -2,10 +2,11 @@ package at.forsyte.apalache.tla.bmcmt.rules
 
 import at.forsyte.apalache.tla.bmcmt._
 import at.forsyte.apalache.tla.bmcmt.implicitConversions._
-import at.forsyte.apalache.tla.bmcmt.types.{FinSetT, PowSetT}
 import at.forsyte.apalache.tla.lir.convenience._
 import at.forsyte.apalache.tla.lir.oper.TlaSetOper
 import at.forsyte.apalache.tla.lir.{NameEx, OperEx}
+import at.forsyte.apalache.tla.types.tsa
+import at.forsyte.apalache.tla.types.tsa.{FinSetT, PowSetT}
 
 
 /**
@@ -89,7 +90,7 @@ class SetInRule(rewriter: SymbStateRewriter) extends RewritingRule {
     }
   }
 
-  private def basicIn(state: SymbState, setCell: ArenaCell, elemCell: ArenaCell, elemType: types.CellT) = {
+  private def basicIn(state: SymbState, setCell: ArenaCell, elemCell: ArenaCell, elemType: tsa.CellT) = {
     val potentialElems = state.arena.getHas(setCell)
     if (!elemCell.cellType.comparableWith(elemType)) {
       // SE-SET-IN0: incompatible types => return false

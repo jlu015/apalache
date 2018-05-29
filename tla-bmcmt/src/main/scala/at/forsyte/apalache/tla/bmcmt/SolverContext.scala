@@ -1,7 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt
 
-import at.forsyte.apalache.tla.bmcmt.types.CellT
 import at.forsyte.apalache.tla.lir.TlaEx
+import at.forsyte.apalache.tla.types.tsa.CellT
 
 /**
   * A context that stores the SMT constraints that are generated in the course of symbolic exploration.

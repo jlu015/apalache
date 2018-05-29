@@ -2,10 +2,10 @@ package at.forsyte.apalache.tla.bmcmt
 
 import java.io.{File, PrintWriter}
 
-import at.forsyte.apalache.tla.bmcmt.types.{BoolT, CellT, FailPredT, IntT}
 import at.forsyte.apalache.tla.lir._
 import at.forsyte.apalache.tla.lir.oper._
 import at.forsyte.apalache.tla.lir.values.{TlaFalse, TlaInt, TlaTrue}
+import at.forsyte.apalache.tla.types.tsa.{BoolT, CellT, FailPredT, IntT}
 import com.microsoft.z3._
 import com.microsoft.z3.enumerations.Z3_lbool
 
