@@ -19,6 +19,6 @@ class TestTypeInferer extends FunSuite {
     val e = tla.int(81)
     Identifier.identify(e)
     infer.inferRecAndStore(e)
-    assert(IntT() == typeMap(e.uid))
+    assert(IntT() == typeMap(e.ID))
   }
 }
