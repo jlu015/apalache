@@ -34,17 +34,31 @@ object TlaRealInfinity extends TlaReal
 /** a boolean */
 case class TlaBool(value: Boolean) extends TlaValue
 
+/**
+  * TODO: there is no much use for this object. Remove.
+  */
 object TlaFalse extends TlaBool(false)
 
+/**
+  * TODO: there is no much use for this object. Remove.
+  */
 object TlaTrue extends TlaBool(true)
 
 /** a string */
 case class TlaStr(value: String) extends TlaValue
 
-/** an abstract set */
+/**
+  *  An abstract set.
+  *
+  *  TODO: remove, as all sets are created with TLA+ expressions.
+  */
 abstract class TlaSet() extends TlaValue
 
-/** a predefined set, e.g., the set of all integers */
+/**
+  * A predefined set, e.g., the set of all integers.
+  *
+  * TODO: such predefined sets are not better than the corresponding nullary operators. Remove.
+  */
 abstract class TlaPredefSet() extends TlaSet {
   val name: String
 }
@@ -52,7 +66,7 @@ abstract class TlaPredefSet() extends TlaSet {
 /**
   * A set defined by the user.
   *
-  * FIXME: Apparently, we do not need this class, as the only way to define a set is to use
+  * TODO: Apparently, we do not need this class, as the only way to define a set is to use
   * an operator... This is already type information, which should be inferred by a type analysis.
   */
 case class TlaUserSet() extends TlaSet
@@ -60,6 +74,6 @@ case class TlaUserSet() extends TlaSet
 /**
   * A function.
   *
-  * FIXME: It is not clear, why we need this object at all, as all functions are created with operators.
+  * TODO: we do not need this class at all, as all functions are created with operators. Remove.
   */
 case class TlaFun(domain: TlaSet) extends TlaValue
