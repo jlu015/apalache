@@ -40,10 +40,10 @@ package object tsa {
       */
     def unify(other: CellT): Option[CellT] = {
       (this, other) match {
-        case (UnknownT(), _) =>
+        case (UnknownT(_), _) =>
           Some(other)
 
-        case (_, UnknownT()) =>
+        case (_, UnknownT(_)) =>
           Some(this)
 
         case (BoolT(), BoolT()) | (ConstT(), ConstT()) | (IntT(), IntT()) =>
@@ -124,9 +124,15 @@ package object tsa {
   }
 
   /**
+    * A substitution from a variable name to a type.
+    */
+  type Subst = Map[String, CellT]
+
+
+  /**
     * A type variable.
     */
-  case class UnknownT() extends CellT {
+  case class UnknownT(name: String) extends CellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -136,7 +142,7 @@ package object tsa {
       */
     override val signature: String = "u"
 
-    override val toString: String = "Unknown"
+    override val toString: String = s"'$name"
   }
 
   /**
@@ -238,7 +244,7 @@ package object tsa {
     * A function type.
     *
     * @param domType    the type of the domain (must be a finite set).
-    * @param resultType result type (not co-domain!)
+    * @param resultType the result type (not the co-domain!)
     */
   case class FunT(domType: CellT, resultType: CellT) extends CellT {
     /**
