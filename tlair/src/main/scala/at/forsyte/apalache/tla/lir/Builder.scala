@@ -20,6 +20,7 @@ import at.forsyte.apalache.tla.lir.values._
   * @author jkukovec
   */
 object Builder {
+  import scala.language.implicitConversions
 
   /** Names and values */
   implicit def name( p_name : String ) : NameEx = NameEx( p_name )

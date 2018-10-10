@@ -144,6 +144,7 @@ package object types {
     }
   }
 
+  sealed abstract class MinimalCellT extends CellT
 
   /**
     * Jure, 13.9.18: Suggestion: Replace all case class X( [no args] ) with object X ?
@@ -178,7 +179,7 @@ package object types {
   /**
     * A cell constant, that is, just a name that expresses string constants in TLA+.
     */
-  sealed case class ConstT() extends CellT {
+  sealed case class ConstT() extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -194,7 +195,7 @@ package object types {
   /**
     * A Boolean cell type.
     */
-  sealed case class BoolT() extends CellT {
+  sealed case class BoolT() extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -210,7 +211,7 @@ package object types {
   /**
     * An integer cell type.
     */
-  sealed case class IntT() extends CellT {
+  sealed case class IntT() extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -228,7 +229,7 @@ package object types {
     *
     * @param elemType the elements type
     */
-  sealed case class FinSetT(elemType: CellT) extends CellT {
+  sealed case class FinSetT(elemType: CellT) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -266,7 +267,7 @@ package object types {
     * @param domType    the type of the domain (must be a finite set).
     * @param resultType result type (not co-domain!)
     */
-  sealed case class FunT(domType: CellT, resultType: CellT) extends CellT {
+  sealed case class FunT(domType: CellT, resultType: CellT) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -325,7 +326,7 @@ package object types {
     *
     * @param args the types of the tuple elements
     */
-  sealed case class TupleT(args: Seq[CellT]) extends CellT {
+  sealed case class TupleT(args: Seq[CellT]) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling.
@@ -353,7 +354,7 @@ package object types {
     *
     * @param fields a map of fields and their types
     */
-  sealed case class RecordT(fields: SortedMap[String, CellT]) extends CellT {
+  sealed case class RecordT(fields: SortedMap[String, CellT]) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -370,7 +371,7 @@ package object types {
   }
 
 
-  sealed case class TypeParam(s: String) extends CellT {
+  sealed case class TypeParam(s: String) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -381,7 +382,7 @@ package object types {
     override val signature = s"P${s}"
   }
 
-  sealed case class OptT( elementType: CellT ) extends CellT {
+  sealed case class OptT( elementType: CellT ) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,
@@ -392,6 +393,27 @@ package object types {
     override val signature : String = s"O${elementType.signature}"
   }
 
+  sealed case class SeqT( elementType: CellT ) extends MinimalCellT {
+    /**
+      * Produce a short signature that uniquely describes the type (up to unification),
+      * similar to Java's signature mangling. If one type can be unified to another,
+      * e.g., records, they have the same signature.
+      *
+      * @return a short signature that uniquely characterizes this type up to unification
+      */
+    override val signature : String = s"Seq_${elementType.signature}"
+  }
+
+  sealed case class XOR( t1: MinimalCellT, t2: MinimalCellT ) extends MinimalCellT {
+    /**
+      * Produce a short signature that uniquely describes the type (up to unification),
+      * similar to Java's signature mangling. If one type can be unified to another,
+      * e.g., records, they have the same signature.
+      *
+      * @return a short signature that uniquely characterizes this type up to unification
+      */
+    override val signature : String = "???"
+  }
 
   /**
     * Unify two types decorated with Option.
