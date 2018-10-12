@@ -38,13 +38,28 @@ class TestTypeInference extends FunSuite with TestingPredefs {
       tla.eql( 1, tla.str( "a" ) ),
       tla.and( trueEx, falseEx, tla.eql(1, 2) ),
       tla.and( 1, 2, 3, 4 ),
-      tla.enumFun( tla.str( "a"), 1, tla.str( "b" ), tla.str( "b" )  )
+      tla.enumFun( tla.str( "a"), 1, tla.str( "b" ), tla.str( "b" )  ),
+      tla.and(
+        tla.eql( n_r, tla.enumFun( tla.str( "a"), 1, tla.str( "b" ), tla.str( "b" )  ) ),
+        tla.eql( n_x, tla.appFun( n_r, tla.str( "a" ) ) )
+      ),
+      tla.and(
+        tla.eql( n_r, tla.enumFun( tla.str( "a"), 1, tla.str( "b" ), tla.str( "b" )  ) ),
+        tla.eql( n_x, tla.appFun( n_r, tla.str( "a" ) ) ),
+        tla.eql( n_y, tla.appFun( n_r, tla.str( "b" ) ) )
+      )
     )
 
     def run(ex: TlaEx) : TypeInference.TypeMaps = {
       Identifier.identify(ex)
+      printsep()
       val r = TypeInference( ex )
       r
+    }
+
+    def run2(ex: TlaEx) = {
+      Identifier.identify(ex)
+      TypeInference.iterativeFind( ex )
     }
 
     def predictExprType( ex: TlaEx, t: MinimalCellT ): Unit =
@@ -53,13 +68,18 @@ class TestTypeInference extends FunSuite with TestingPredefs {
       assert( run(ex).varTypeMap(name) == t )
 
 
+//    run( tla.plus( 1, tla.appFun( n_f, tla.str( "a" )) ) )
+
+    run2( exs(7) ).varTypeMap foreach { case (k,v) => println( s"${k} -> ${v}") }
+    run2( exs(7) ).typeVarMap foreach { case (k,v) => println( s"${k} -> ${v}") }
+    run2( exs(7) ).uidMap foreach { case (k,v) => println( s"${k} -> ${v}") }
 //    predictExprType( exs( 0 ), BoolT() )
 //    predictVarType( exs( 1 ), "a", IntT() )
 //    assertThrows[TypeException]( run( exs( 2 ) ) )
 //    predictExprType( exs( 3 ), BoolT() )
 //    assertThrows[TypeException]( run( exs( 4 ) ) )
-
-    predictExprType( exs(5), RecordT( SortedMap( "a" -> IntT(), "b" -> ConstT() ) ) )
+//    predictExprType( exs(5), RecordT( SortedMap( "a" -> IntT(), "b" -> ConstT() ) ) )
+//    predictVarType( exs(6), "x", IntT() )
   }
 
   ignore( "Application" ) {

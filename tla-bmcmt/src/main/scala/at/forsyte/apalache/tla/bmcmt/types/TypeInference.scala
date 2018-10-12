@@ -63,37 +63,7 @@ object Signatures {
     }
   }
 
-  sealed case class Poly( sig1: Signature, sig2: Signature, id: CounterType ) extends Sig
-
-  sealed abstract class PolySigBlock {
-    import PolySigBlock._
-    def &&( other: PolySigBlock ) : PolySigBlock = (this, other) match {
-      case (NoBlock, _) => other
-      case (_, NoBlock) => this
-      case (FullBlock, _) => this
-      case (_, FullBlock) => other
-      case (LeftBlock, RightBlock) => FullBlock
-      case (RightBlock, LeftBlock) => FullBlock
-      case _ => this
-    }
-  }
-
-  object PolySigBlock {
-
-    object NoBlock extends PolySigBlock
-
-    object LeftBlock extends PolySigBlock
-
-    object RightBlock extends PolySigBlock
-
-    object FullBlock extends PolySigBlock
-
-  }
-
-  sealed case class PolyDecisionInfo( c: CounterType  )
-
-  type SigBlockMap = Map[CounterType, List[Int]]
-
+  sealed case class Poly( sig1: Signature, sig2: Signature ) extends Sig
 
   private def typeParam( exId : UID, id : Int ) : TypeParam = TypeParam( s"${exId.id}_${id}" )
 
@@ -167,8 +137,6 @@ object Signatures {
         Signature( List( T ), List( FinSetT( FinSetT( T ) ) ), FinSetT( T ) )
 
       // Functions
-      case TlaFunOper.app =>
-        Signature( ts2, List( FunT( FinSetT( t1 ), t2 ), t1 ), t2 )
       case TlaFunOper.domain =>
         Signature( ts2, List( FunT( t1, t2 ) ), t1 )
       case TlaFunOper.funDef =>
@@ -184,6 +152,16 @@ object Signatures {
         Signature( ts2, FunT( FinSetT( t1 ), t2 ) +: List.fill( n )( ts2 ).flatten, FunT( FinSetT( t1 ), t2 ) )
 
       // Records
+      case TlaFunOper.app =>
+        val Seq(_, x) = op.args
+        x match {
+          case ValEx( TlaStr( s ) ) =>
+            Poly(
+              Signature( List( t1 ), List( FunT( FinSetT( ConstT() ), t1 ), ConstT() ), t1 ),
+              Signature( List( t2 ), List( RecordT( SortedMap( s -> t2 ) ), ConstT() ), t2 )
+            )
+          case _ => Signature( ts2, List( FunT( FinSetT( t1 ), t2 ), t1 ), t2 )
+        }
       case TlaFunOper.enum =>
         val n = op.args.size
         /**  this  can potentially be a record, if all keys are strings */
@@ -201,7 +179,7 @@ object Signatures {
           val mp = keys.flatten zip recTs
           val recEnumSig = Signature( recTs, recTs flatMap { t => List( ConstT(), t ) }, RecordT( SortedMap( mp : _* ) ) )
           val funEnumSig = Signature( List( funT ), List.fill( n / 2 )( List(ConstT(), funT) ).flatten, FunT( FinSetT( ConstT() ), funT) )
-          Poly( funEnumSig, recEnumSig, i )
+          Poly( funEnumSig, recEnumSig )
         }
         else {
           // Must be a function
@@ -230,7 +208,7 @@ object Signatures {
     ret match {
       case Signature( _, args, _ ) =>
         assert( op.oper.isCorrectArity( args.size ) )
-      case Poly( sig1, sig2, _ ) =>
+      case Poly( sig1, sig2 ) =>
         List(sig1, sig2) foreach { el =>
           assert( op.oper.isCorrectArity( el.args.size ) )
         }
@@ -247,7 +225,7 @@ object Signatures {
 object TypeInference {
 
   import CounterStates._
-  import Signatures.{Signature, Poly, PolySigBlock, SigBlockMap}
+  import Signatures.{Signature, Poly}
 
   private object Internals {
 
@@ -296,12 +274,12 @@ object TypeInference {
         lst = sig match {
           case Signature( _, args, res ) =>
             isType( bl, res ) +: ( bls.zip( args ) map { case (a, b) => isType( a, b ) } )
-          case Poly( sig1, sig2, i ) =>
+          case Poly( sig1, sig2 ) =>
             val List(th1, th2) = List(sig1, sig2) map { case Signature( _, args, res ) =>
               isType( bl, res ) +: ( bls.zip( args ) map { case (a, b) => isType( a, b ) } )
             }
             th1.zip( th2 ).map { case (isType( x, a ), isType( _, b )) => // the 1st component is identical by construction
-              isType( x, XOR( a, b ) )
+              isType( x, if (a == b) a else XOR( a, b ) )
             }
         }
         subThetas <- ex.args.toList.traverseS( thetaS ).map {
@@ -459,7 +437,9 @@ object TypeInference {
           v2 <- trace( b, map, xmap )
           deadBranchRight <- gets[cleanupState, Boolean] { _.deadBranch }
         } yield (deadBranchLeft,deadBranchRight) match {
-          case (false, false) => XOR (v1, v2)
+          case (false, false) =>
+            val xmp = xmap
+            unify( v1, v2 ).getOrElse( XOR (v1, v2) )
           case (true, false) =>
             println( s"Type ${a} is inconsistent." )
             v2
@@ -551,9 +531,352 @@ object TypeInference {
 
   }
 
+  def compositeStateOperation[S,D,T]( cmp: State[D, T], getter: S => D, setter: (S,D) => S ) : State[S,T] = State[S,T] {
+    s =>
+      val (endD, t) = cmp.run( getter(s) )
+      ( setter(s, endD), t )
+  }
+
   sealed case class TypeMaps( uidMap: Map[UID, MinimalCellT],
                               typeVarMap: Map[TypeParam, MinimalCellT],
                               varTypeMap : Map[String, MinimalCellT] )
+
+  def split2( m: Map[ TypeParam, Option[MinimalCellT] ] ) : TypeMaps = {
+    val bRegex : Regex = """\.b_(\d+)""".r
+    val cRegex : Regex = """\.c_.*""".r
+    val vRegex : Regex = """[^\.].*""".r
+    val cmp = m.toList traverseS { case (k,vOpt) =>
+      k.s match {
+        case bRegex(i) =>
+          vOpt match {
+            case None =>
+              throw new TypeException(s"Expression ${UID(i.toInt)} is untypable")
+            case Some( v ) =>
+              modify[TypeMaps] { tm =>
+                tm.copy( uidMap =  tm.uidMap + (UID( i.toInt ) -> v) )
+              }
+          }
+
+        case cRegex() =>
+          vOpt match {
+            case None => State[TypeMaps, Unit] { s => (s, ()) }
+            case Some( v ) =>
+              modify[TypeMaps] { tm =>
+                tm.copy( typeVarMap = tm.typeVarMap + (k -> v) )
+              }
+          }
+
+        case vRegex() =>
+          vOpt match {
+            case None => State[TypeMaps, Unit] { s => (s, ()) }
+            case Some( v ) =>
+              modify[TypeMaps] { tm =>
+                tm.copy( varTypeMap = tm.varTypeMap + (k.s -> v) )
+              }
+          }
+        case _ =>
+          throw new InternalCheckerError( s"Type parameter shape unexpected: ${k.s}" )
+      }
+    }
+
+    cmp.run( TypeMaps( Map.empty, Map.empty, Map.empty ) )._1
+  }
+
+  def iterativeFind( tlaEx : TlaEx ) : TypeMaps = {
+
+    import Internals._
+
+    val queue = theta( tlaEx )
+
+    type openMap = Map[ TypeParam, Set[MinimalCellT] ]
+    type closedMap = Map[ TypeParam, Option[MinimalCellT] ]
+
+    sealed case class internal2( open: openMap, closed: closedMap, eqClasses : D )
+    object internal {
+      def empty: internal2 = internal2( Map.empty, Map.empty, DisjointSets.empty )
+    }
+
+    type iState[T] = State[internal2, T]
+
+    val cmp : iState[List[Unit]] = queue traverseS {
+      case isType( tp : TypeParam, other ) =>
+        modify[internal2] {
+          s => s.copy( open = s.open + ( tp -> ( s.open.getOrElse( tp, Set.empty[MinimalCellT] ) + other ) ) )
+        }
+
+      case it =>
+        throw new InternalCheckerError( s"Unexpected ${it} from theta" )
+    }
+
+    def unionS( t1: TypeParam, t2: TypeParam ) =
+      compositeStateOperation[internal2, D, TypeParam](
+        DisjointSets.unionComputation[TypeParam]( t1, t2 ),
+        _.eqClasses,
+        {case (s,d) => s.copy( eqClasses = d) }
+      )
+
+    def findS( t: TypeParam ) =
+      compositeStateOperation[internal2, D, TypeParam](
+        DisjointSets.findComputation[TypeParam]( t ),
+        _.eqClasses,
+        {case (s,d) => s.copy( eqClasses = d) }
+      )
+
+    def xorSymmS( t1 : MinimalCellT, t2 : MinimalCellT, other : MinimalCellT ) : iState[Option[MinimalCellT]] =
+      List( (t1, other), (t2, other) ) traverseS {
+        case (x, y) => unifyS( x, y )
+      } map {
+        _ filter {
+          _.nonEmpty
+        } match {
+          case List( el ) => // unifies with exactly one
+            el
+          case List( el1, el2 ) => // unifies with both
+            if ( el1 == el2 ) el1
+            else Some( XOR( el1.get, el2.get ) )
+          case _ => None
+        }
+      }
+
+    def unifyTPSymm( tp: TypeParam, other: MinimalCellT ) : iState[Option[MinimalCellT]] = for {
+      rep <- findS(tp)
+      _ <- modify[internal2] { s =>
+        s.copy( open = s.open + ( rep -> ( s.open.getOrElse( rep, Set.empty ) + other ) ) )
+      }
+    } yield Option( other )
+
+    def unifyS( a : MinimalCellT, b : MinimalCellT ) : iState[Option[MinimalCellT]] = (a, b) match {
+      // \forall x . u(x,x) = x
+      case _ if a == b =>
+        Option( a ).point[iState]
+
+      // TypeParameters can be unified with everything
+      case (x : TypeParam, y : TypeParam) => for {
+        rx <- findS(x)
+        ry <- findS(y)
+        u <- unionS( rx, ry )
+        _ <- modify[internal2] { s =>
+          if( s.open.contains( rx ) || s.open.contains(ry) ) {
+            val newSet = s.open.getOrElse( rx, Set.empty ) ++ s.open.getOrElse( ry, Set.empty )
+            s.copy( open = s.open - (rx, ry) + ( u -> newSet ) )
+          }
+          else s
+        }
+      } yield Option(u)
+
+      case (x : TypeParam, _) => unifyTPSymm(x, b)
+
+      case (_, x : TypeParam) => unifyTPSymm(x, a)
+
+      // Sets unify recursively
+      case (FinSetT( l : MinimalCellT ), FinSetT( r : MinimalCellT )) =>
+        unifyS( l, r ) map {
+          _ map FinSetT
+        }
+
+      // Functions unify recursively
+      case (FunT( lDom : MinimalCellT, lCoDom : MinimalCellT ), FunT( rDom : MinimalCellT, rCoDom : MinimalCellT )) =>
+        for {
+          domO <- unifyS( lDom, rDom )
+          coDomO <- unifyS( lCoDom, rCoDom )
+        } yield domO flatMap { x => coDomO map { y => FunT( x, y ) } }
+
+      // Tuples unify recursively, if their lengths are the same.
+      // If any component doesn't unify, the tuple doesn't unify
+      case (TupleT( lArgs : Seq[MinimalCellT] ), TupleT( rArgs : Seq[MinimalCellT] )) =>
+        // in contrast to sequences, tuples of different lengths cannot be unified
+        if ( lArgs.lengthCompare( rArgs.length ) == 0 )
+        // the .sequence method turns List[Option[X]] into an Option[List[X]], where the value is None
+        // iff any element of the list is None
+          lArgs.zip( rArgs ).toList traverseS { case (x, y) => unifyS( x, y ) } map {
+            _.sequence map TupleT
+          }
+        else
+          Option.empty[MinimalCellT].point[iState]
+
+      case (RecordT( lMap : Map[String, MinimalCellT] ), RecordT( rMap : Map[String, MinimalCellT] )) =>
+        // We unify only on the keys in both maps
+        lMap.keySet.intersect( rMap.keySet ).toList traverseS { k =>
+          unifyS( lMap( k ).asInstanceOf[MinimalCellT], rMap( k ).asInstanceOf[MinimalCellT] ) map {
+            _ map { m =>
+              k -> m
+            }
+          }
+          // A List[Options[(String,MinimalCellT)]] becomes Option[List[(String, MinimalCellT)]]
+        } map {
+          _.sequence
+        } map {
+          _ map {
+            _.toMap
+          } map { m =>
+            ( lMap ++ rMap ) ++ m
+          } map RecordT
+        }
+
+      case (XOR( t1, t2 ), other) =>
+        xorSymmS( t1, t2, other )
+      case (other, XOR( t1, t2 )) =>
+        xorSymmS( t1, t2, other )
+
+      case _ =>
+        Option.empty[MinimalCellT].point[iState]
+    }
+
+    val startInternal = cmp.run( internal.empty )._1
+
+    // Merge step:
+    // a) unions
+    val unionCmp : iState[Unit] = for {
+      open <- gets[internal2, openMap] { _.open}
+      _ <- open.toList traverseS { case (k,v) =>
+        v.toList traverseS {
+          case tp: TypeParam =>
+            unionS( k, tp ) map { _ => ()}
+          case _ =>
+            ().point[iState]
+        }
+      }
+    } yield ()
+
+    // b) map merges
+    val mergeCmp : iState[Unit] = for {
+      elems <- gets[internal2, Set[TypeParam]] {
+        _.eqClasses.elements
+      } map {_.toList}
+      _ <- elems traverseS { el => for {
+        e <- findS(el)
+        _ <- if ( e == el ) ().point[iState] else
+          modify[internal2] { s =>
+            val set = s.open.getOrElse( el, Set.empty )
+            val newOpen = ( s.open - el ) + ( e -> ( s.open.getOrElse( e, Set.empty ) ++ set ) )
+            s.copy( open = newOpen )
+          }
+        _ <- modify[internal2] {
+          s => s.copy( open = s.open map { case (k,v) => k -> v.filterNot(
+            _.isInstanceOf[TypeParam] )
+          } )
+        }
+      } yield ()
+
+      }
+    } yield ()
+
+    val expandCmp : iState[Unit] = for {
+      open <- gets[internal2, openMap] {
+        _.open
+      }
+      mp <- open.toList traverseS { case (k, v) =>
+        def iter( lst : List[MinimalCellT] ) : iState[Option[MinimalCellT]] = lst match {
+          case head :: Nil => Option(head).point[iState]
+          case h1 :: h2 :: rest => for {
+            newSetOpt <- unifyS( h1, h2 )
+            ret <- newSetOpt match {
+              case None => Option.empty[MinimalCellT].point[iState] // replace with delete
+              case Some( e ) => iter( e +: rest )
+            }
+          } yield ret
+
+        }
+        iter( v.toList ) map {  k -> _ }
+      } map {_.toMap}
+      _ <- modify[internal2] { s =>
+        val newClosed = s.closed ++ mp //++ ( mp filterNot { case (t, o) => o exists { _.isInstanceOf[XOR] } } )
+        s.copy( closed = newClosed, open = s.open filterKeys { !newClosed.contains(_) } )
+      }
+    } yield ()
+
+    def iterateExpand : iState[Unit] = for {
+      s1 <- get[internal2]
+      _ <- expandCmp
+      s2 <- get[internal2]
+      _ <-
+        if (s1 == s2)
+          ().point[iState]
+        else
+          iterateExpand
+    } yield ()
+
+    def unfold( ex: MinimalCellT ) : iState[Option[MinimalCellT]] = ex match {
+      case x : TypeParam => for {
+        rep <- findS(x)
+        res <- gets[internal2, Option[MinimalCellT]] {
+          _.closed.getOrElse( rep, Some(x) )
+        }
+      } yield res
+      // Recurse on FunT
+      case FunT( a : MinimalCellT, b : MinimalCellT ) => for {
+        v1 <- unfold(a)
+        v2 <- unfold(b)
+      } yield v1 flatMap { x => v2 map { y => FunT( x, y ) } }
+      // ... and FinSetT
+      case FinSetT( x : MinimalCellT ) =>
+        unfold(x) map { _ map FinSetT }
+      case IntT() | BoolT() | ConstT() =>
+        Option(ex).point[iState]
+      // Records also recurse on the fields
+      case RecordT( mp ) =>
+        mp.toList traverseS {
+          case (k, w) => unfold( w.asInstanceOf[MinimalCellT] ) map { _ map {
+            k -> _
+          } }
+        } map {
+          _.sequence
+        } map { _ map { l => RecordT( SortedMap( l : _* ) ) } }
+      case XOR( a, b ) => for {
+        xOpt <- unfold( a )
+        yOpt <- unfold( b )
+      } yield (xOpt, yOpt) match {
+        case (None, None) => None
+        case ( _, None ) => xOpt
+        case ( None, _ ) => yOpt
+        case ( Some(x), Some(y) ) =>
+          Some( unify( x, y ).getOrElse( XOR( x, y ) ) )
+      }
+      case _ =>
+        throw new InternalCheckerError( s"unfold for [${ex}] is not implemented" )
+    }
+
+    val unfoldAll : iState[Unit] = for {
+      closed <- gets[internal2, closedMap] {
+        _.closed
+      }
+      _ <- closed.toList traverseS { case (k, vOpt) =>
+        vOpt match {
+          case None => ().point[iState]
+          case Some( v ) => for {
+            unfolded <- unfold( v )
+            _ <- modify[internal2] { s =>
+              val a = s
+              s.copy( open = s.open - k, closed = s.closed + ( k -> unfolded ) )
+            }
+          } yield ()
+
+        }
+      }
+    } yield ()
+
+    def expand2( map :  closedMap ) : State[ D, closedMap ]=
+      for {
+        elems <- gets[D, Set[TypeParam]] {
+          _.elements
+        }
+        completeMap <- elems.toList traverseS { el =>
+          for {
+            rep <- DisjointSets.findComputation( el )
+          } yield el -> map.getOrElse( rep, None )
+        }
+      } yield completeMap.toMap
+
+    val ints = ( for {
+      _ <- unionCmp
+      _ <- mergeCmp
+      _ <- iterateExpand
+      _ <- unfoldAll
+    } yield ()).run( startInternal )._1
+
+    split2(expand2(ints.closed).run( ints.eqClasses )._2)
+  }
+
 
   /**
     * Performs type inference on `tlaEx`
@@ -618,6 +941,14 @@ object TypeInference {
                   _ <- rememberXor(a,rep)
                   _ <- rememberXor(b,rep)
                   _ <- internalUpdate( rep, newT )
+                  _ = {
+                    val xa = a
+                    val xb = b
+                    val xp = rep
+                    val xv = v
+                    val xc = c
+                    val w = 1
+                  }
                 } yield()
                 case Some( newT ) =>
                   internalUpdate( rep, newT )
