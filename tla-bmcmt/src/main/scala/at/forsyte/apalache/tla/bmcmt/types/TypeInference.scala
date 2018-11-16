@@ -63,7 +63,7 @@ object Signatures {
     }
   }
 
-  sealed case class Poly( sig1: Signature, sig2: Signature ) extends Sig
+  sealed case class Poly( sigs: List[Signature] ) extends Sig
 
   private def typeParam( exId : UID, id : Int ) : TypeParam = TypeParam( s"${exId.id}_${id}" )
 
@@ -156,10 +156,10 @@ object Signatures {
         val Seq(_, x) = op.args
         x match {
           case ValEx( TlaStr( s ) ) =>
-            Poly(
+            Poly( List (
               Signature( List( t1 ), List( FunT( FinSetT( ConstT() ), t1 ), ConstT() ), t1 ),
               Signature( List( t2 ), List( RecordT( SortedMap( s -> t2 ) ), ConstT() ), t2 )
-            )
+            ) )
           case _ => Signature( ts2, List( FunT( FinSetT( t1 ), t2 ), t1 ), t2 )
         }
       case TlaFunOper.enum =>
@@ -179,7 +179,7 @@ object Signatures {
           val mp = keys.flatten zip recTs
           val recEnumSig = Signature( recTs, recTs flatMap { t => List( ConstT(), t ) }, RecordT( SortedMap( mp : _* ) ) )
           val funEnumSig = Signature( List( funT ), List.fill( n / 2 )( List(ConstT(), funT) ).flatten, FunT( FinSetT( ConstT() ), funT) )
-          Poly( funEnumSig, recEnumSig )
+          Poly( List(funEnumSig, recEnumSig) )
         }
         else {
           // Must be a function
@@ -208,8 +208,9 @@ object Signatures {
     ret match {
       case Signature( _, args, _ ) =>
         assert( op.oper.isCorrectArity( args.size ) )
-      case Poly( sig1, sig2 ) =>
-        List(sig1, sig2) foreach { el =>
+//      case Poly( sig1, sig2 ) =>
+      case Poly( sigs ) =>
+        sigs foreach { el =>
           assert( op.oper.isCorrectArity( el.args.size ) )
         }
     }
@@ -274,12 +275,23 @@ object TypeInference {
         lst = sig match {
           case Signature( _, args, res ) =>
             isType( bl, res ) +: ( bls.zip( args ) map { case (a, b) => isType( a, b ) } )
-          case Poly( sig1, sig2 ) =>
-            val List(th1, th2) = List(sig1, sig2) map { case Signature( _, args, res ) =>
-              isType( bl, res ) +: ( bls.zip( args ) map { case (a, b) => isType( a, b ) } )
+//          case Poly( sig1, sig2 ) =>
+//            val List(th1, th2) = List(sig1, sig2) map { case Signature( _, args, res ) =>
+//              isType( bl, res ) +: ( bls.zip( args ) map { case (a, b) => isType( a, b ) } )
+//            }
+//            th1.zip( th2 ).map { case (isType( x, a ), isType( _, b )) => // the 1st component is identical by construction
+//              isType( x, if (a == b) a else XOR( a, b ) )
+//            }
+          case Poly( sigs ) =>
+            val ths : List[List[isType]] = sigs map { case Signature( _, args, res ) =>
+              isType( bl, res ) +: ( bls.toList.zip( args ) map { case (a, b) => isType( a, b ) } )
             }
-            th1.zip( th2 ).map { case (isType( x, a ), isType( _, b )) => // the 1st component is identical by construction
-              isType( x, if (a == b) a else XOR( a, b ) )
+            // Assumption: |sigs| > 0
+            ths.transpose map { x =>
+              (x map { _.v2 } ).distinct match {
+                case List( _ ) => x.head
+                case l => isType( x.head.v1, XOR(l) )
+              }
             }
         }
         subThetas <- ex.args.toList.traverseS( thetaS ).map {
@@ -301,20 +313,37 @@ object TypeInference {
     type MDCX = internal
     type internalState[T] = State[MDCX, T]
 
-    def xorSymm( t1 : MinimalCellT, t2 : MinimalCellT, other : MinimalCellT ) : Option[MinimalCellT] =
-      List( (t1, other), (t2, other) ) map {
-        case (x, y) => unify( x, y )
+//    def xorSymm( t1 : MinimalCellT, t2 : MinimalCellT, other : MinimalCellT ) : Option[MinimalCellT] =
+//      List( (t1, other), (t2, other) ) map {
+//        case (x, y) => unify( x, y )
+//      } filter {
+//        _.nonEmpty
+//      } match {
+//        case List( el ) => // unifies with exactly one
+//          el
+//        case List( el1, el2 ) => // unifies with both
+//          if (el1 == el2) el1
+//          else Some( XOR( el1.get, el2.get ) )
+//        case _ => None
+//      }
+    def xorSymm( xorArgs: List[MinimalCellT], other : MinimalCellT ) : Option[MinimalCellT] =
+      (xorArgs map {
+        unify( _, other )
       } filter {
         _.nonEmpty
-      } match {
+      } ).distinct match {
+        case Nil => None
         case List( el ) => // unifies with exactly one
           el
-        case List( el1, el2 ) => // unifies with both
-          if (el1 == el2) el1
-          else Some( XOR( el1.get, el2.get ) )
-        case _ => None
+        case lst => // unifies with some
+          Some( XOR( lst map {_.get} ) )
       }
 
+    def unifyAll( lst: List[MinimalCellT] ) : Option[MinimalCellT] = lst match {
+      case Nil => None
+      case x :: Nil => Some(x)
+      case a :: b :: rest => unify(a,b) flatMap { x => unifyAll( x +: rest ) }
+    }
 
     def unify( a : MinimalCellT, b : MinimalCellT ) : Option[MinimalCellT] = (a, b) match {
       // \forall x . u(x,x) = x
@@ -363,10 +392,14 @@ object TypeInference {
           ( lMap ++ rMap ) ++ m // ++ order guarantees keys from m (the rhs) dominate
         } map RecordT
 
-      case (XOR( t1, t2 ), other) =>
-        xorSymm( t1, t2, other )
-      case (other, XOR( t1, t2 )) =>
-        xorSymm( t1, t2, other )
+//      case (XOR( t1, t2 ), other) =>
+//        xorSymm( t1, t2, other )
+//      case (other, XOR( t1, t2 )) =>
+//        xorSymm( t1, t2, other )
+      case (XOR( args ), other) =>
+        xorSymm( args, other )
+      case (other, XOR( args )) =>
+        xorSymm( args, other )
 
       case _ =>
         None
@@ -429,25 +462,39 @@ object TypeInference {
               k -> _
             }
           } map { l => RecordT( SortedMap( l : _* ) ) }
-        case XOR( a, b ) => for {
-          _ <- setDeadBranch(false)
-          v1 <- trace( a, map, xmap )
-          deadBranchLeft <- gets[cleanupState, Boolean] { _.deadBranch }
-          _ <- setDeadBranch(false)
-          v2 <- trace( b, map, xmap )
-          deadBranchRight <- gets[cleanupState, Boolean] { _.deadBranch }
-        } yield (deadBranchLeft,deadBranchRight) match {
-          case (false, false) =>
-            val xmp = xmap
-            unify( v1, v2 ).getOrElse( XOR (v1, v2) )
-          case (true, false) =>
-            println( s"Type ${a} is inconsistent." )
-            v2
-          case (false, true) =>
-            println( s"Type ${b} is inconsistent." )
-            v1
-          case (true, true) =>
-            throw new TypeException( s"Types ${a} and ${b} are both inconsistent." )
+//        case XOR( a, b ) => for {
+//          _ <- setDeadBranch(false)
+//          v1 <- trace( a, map, xmap )
+//          deadBranchLeft <- gets[cleanupState, Boolean] { _.deadBranch }
+//          _ <- setDeadBranch(false)
+//          v2 <- trace( b, map, xmap )
+//          deadBranchRight <- gets[cleanupState, Boolean] { _.deadBranch }
+//        } yield (deadBranchLeft,deadBranchRight) match {
+//          case (false, false) =>
+//            val xmp = xmap
+//            unify( v1, v2 ).getOrElse( XOR (v1, v2) )
+//          case (true, false) =>
+//            println( s"Type ${a} is inconsistent." )
+//            v2
+//          case (false, true) =>
+//            println( s"Type ${b} is inconsistent." )
+//            v1
+//          case (true, true) =>
+//            throw new TypeException( s"Types ${a} and ${b} are both inconsistent." )
+//        }
+        case XOR( args ) => for {
+          branches <- args traverseS { a => for {
+            _ <- setDeadBranch(false)
+            v <- trace( a, map, xmap )
+            deadBranch <- gets[cleanupState, Boolean] { _.deadBranch }
+          } yield (v, deadBranch)
+          } map { _ filterNot { _._2 } map { _._1 } }
+        } yield branches match {
+          case Nil =>
+            throw new TypeException( s"Types in ${args} are all inconsistent." )
+          case List( el ) => el
+          case els =>
+            unifyAll( els ).getOrElse( XOR( els ) )
         }
         case _ =>
           throw new InternalCheckerError( s"trace for [${v}] is not implemented" )
@@ -622,21 +669,37 @@ object TypeInference {
         {case (s,d) => s.copy( eqClasses = d) }
       )
 
-    def xorSymmS( t1 : MinimalCellT, t2 : MinimalCellT, other : MinimalCellT ) : iState[Option[MinimalCellT]] =
-      List( (t1, other), (t2, other) ) traverseS {
-        case (x, y) => unifyS( x, y )
-      } map {
-        _ filter {
+//    def xorSymmS( t1 : MinimalCellT, t2 : MinimalCellT, other : MinimalCellT ) : iState[Option[MinimalCellT]] =
+//      List( (t1, other), (t2, other) ) traverseS {
+//        case (x, y) => unifyS( x, y )
+//      } map {
+//        _ filter {
+//          _.nonEmpty
+//        } match {
+//          case List( el ) => // unifies with exactly one
+//            el
+//          case List( el1, el2 ) => // unifies with both
+//            if ( el1 == el2 ) el1
+//            else Some( XOR( el1.get, el2.get ) )
+//          case _ => None
+//        }
+//      }
+
+    def xorSymmS( xorArgs : List[MinimalCellT], other : MinimalCellT ) : iState[Option[MinimalCellT]] =
+      xorArgs traverseS {
+        unifyS( _, other )
+      } map { l =>
+        ( l filter {
           _.nonEmpty
-        } match {
+        } ).distinct match {
+          case Nil => None
           case List( el ) => // unifies with exactly one
             el
-          case List( el1, el2 ) => // unifies with both
-            if ( el1 == el2 ) el1
-            else Some( XOR( el1.get, el2.get ) )
-          case _ => None
+          case lst => // unifies with some
+            Some( XOR( lst map {_.get } ) )
         }
       }
+
 
     def unifyTPSymm( tp: TypeParam, other: MinimalCellT ) : iState[Option[MinimalCellT]] = for {
       rep <- findS(tp)
@@ -704,19 +767,21 @@ object TypeInference {
           }
           // A List[Options[(String,MinimalCellT)]] becomes Option[List[(String, MinimalCellT)]]
         } map {
-          _.sequence
-        } map {
-          _ map {
+          _.sequence map {
             _.toMap
           } map { m =>
             ( lMap ++ rMap ) ++ m
           } map RecordT
         }
 
-      case (XOR( t1, t2 ), other) =>
-        xorSymmS( t1, t2, other )
-      case (other, XOR( t1, t2 )) =>
-        xorSymmS( t1, t2, other )
+//      case (XOR( t1, t2 ), other) =>
+//        xorSymmS( t1, t2, other )
+//      case (other, XOR( t1, t2 )) =>
+//        xorSymmS( t1, t2, other )
+      case (XOR( args ), other) =>
+        xorSymmS( args, other )
+      case (other, XOR( args )) =>
+        xorSymmS( args, other )
 
       case _ =>
         Option.empty[MinimalCellT].point[iState]
@@ -822,15 +887,18 @@ object TypeInference {
         } map {
           _.sequence
         } map { _ map { l => RecordT( SortedMap( l : _* ) ) } }
-      case XOR( a, b ) => for {
-        xOpt <- unfold( a )
-        yOpt <- unfold( b )
-      } yield (xOpt, yOpt) match {
-        case (None, None) => None
-        case ( _, None ) => xOpt
-        case ( None, _ ) => yOpt
-        case ( Some(x), Some(y) ) =>
-          Some( unify( x, y ).getOrElse( XOR( x, y ) ) )
+//      case XOR( a, b ) => for {
+//        xOpt <- unfold( a )
+//        yOpt <- unfold( b )
+//      } yield (xOpt, yOpt) match {
+//        case (None, None) => None
+//        case ( _, None ) => xOpt
+//        case ( None, _ ) => yOpt
+//        case ( Some(x), Some(y) ) =>
+//          Some( unify( x, y ).getOrElse( XOR( x, y ) ) )
+//      }
+      case XOR( args ) => args traverseS unfold map {_.flatten } map {
+        lst => Some( unifyAll( lst ).getOrElse( XOR( lst ) ) )
       }
       case _ =>
         throw new InternalCheckerError( s"unfold for [${ex}] is not implemented" )
@@ -884,98 +952,99 @@ object TypeInference {
     * @param tlaEx
     * @return Maps every (sub)expression (by ID) to its type
     */
-  def apply( tlaEx : TlaEx ) : TypeMaps = { //Map[UID, MinimalCellT] = { // to be Map[UID, CellT]
-
-    import Internals._
-
-    /** Start by computing all isType predicates */
-    val queue = theta( tlaEx )
-
-    queue foreach println
-
-    def rememberXor( el : MinimalCellT, v : TypeParam ) : internalState[Unit] = el match {
-      case x : TypeParam => internalXorDep( x, v )
-      case _ => ().point[internalState]
-    }
-
-    def cmp( q : List[isType]) : internalState[List[Unit]] =
-      q traverseS { el =>
-        for {
-          _ <- el match {
-            /** If type equality is established between two type parameters we need to call union */
-            case isType( v1 : TypeParam, v2 : TypeParam ) => for {
-              rep1 <- internalFind( v1 )
-              rep2 <- internalFind( v2 )
-              t1 <- internalGOE( rep1 )
-              t2 <- internalGOE( rep2 )
-
-              _ <- unify( t1, t2 ) match {
-                case Some( x ) =>
-                  for {
-                    // If the unification is possible, the type parameters belong to the same DJS set
-                    r <- internalUnion( rep1, rep2 )
-                    t = x match {
-                      // x can only be a type parameter if both t1 and t2 were.
-                      // However, there is no way to predict whether the result of type unification, x,
-                      // and set union representative, r, are the same element
-                      // (in principle, both are arbitrary choices between t1=rep1 and t2=rep2)
-                      // In that case, we always take the set union representative as the new type.
-                      case _ : TypeParam => r
-                      case _ => x
-                    }
-                    _ <- internalUpdate( r, t )
-                  } yield ()
-                case None =>
-                  throw new TypeException( s"Types ${t1} and ${t2} are incompatible." )
-              }
-            } yield ()
-
-            /** If one is a type parameter and the other a constant, the constant dominates */
-            case isType( v : TypeParam, c ) => for { // c not a typeparam for sure
-              rep <- internalFind( v )
-              t <- internalGOE( rep )
-
-              _ <- unify( t, c ) match {
-                case Some( newT@XOR( a , b ) ) => for {
-//                  _ <- println( s"XOR: $rep  $a  $b" ).point[internalState]
-                  _ <- rememberXor(a,rep)
-                  _ <- rememberXor(b,rep)
-                  _ <- internalUpdate( rep, newT )
-                  _ = {
-                    val xa = a
-                    val xb = b
-                    val xp = rep
-                    val xv = v
-                    val xc = c
-                    val w = 1
-                  }
-                } yield()
-                case Some( newT ) =>
-                  internalUpdate( rep, newT )
-                case None =>
-                  throw new TypeException( s"Types ${c} and ${t} are incompatible." )
-              }
-            } yield ()
-
-            /** isType( c, v: TypeParam ) should not be possible */
-
-            case isType( a, b ) => throw new TypeException( s"Types ${a} and ${b} are incompatible." )
-          }
-        } yield ()
-      }
-
-//    val finalCmp: internalState[Unit] = for {
-//      q <- preCmp
-//      _ <- cmp(q)
-//    } yield ()
-
-    val internal( endMap, endDJS, _ , endX) = cmp(queue).run( internal( Map.empty, DisjointSets.empty, 0, Map.empty ) )._1
-
-    val expanded = expand( endMap, endDJS, endX )
-
-    val r = split( expanded )
-
-    r
-  }
+  def apply( tlaEx: TlaEx ) : TypeMaps = TypeMaps( Map.empty, Map.empty, Map.empty )
+//  def apply( tlaEx : TlaEx ) : TypeMaps = { //Map[UID, MinimalCellT] = { // to be Map[UID, CellT]
+//
+//    import Internals._
+//
+//    /** Start by computing all isType predicates */
+//    val queue = theta( tlaEx )
+//
+//    queue foreach println
+//
+//    def rememberXor( el : MinimalCellT, v : TypeParam ) : internalState[Unit] = el match {
+//      case x : TypeParam => internalXorDep( x, v )
+//      case _ => ().point[internalState]
+//    }
+//
+//    def cmp( q : List[isType]) : internalState[List[Unit]] =
+//      q traverseS { el =>
+//        for {
+//          _ <- el match {
+//            /** If type equality is established between two type parameters we need to call union */
+//            case isType( v1 : TypeParam, v2 : TypeParam ) => for {
+//              rep1 <- internalFind( v1 )
+//              rep2 <- internalFind( v2 )
+//              t1 <- internalGOE( rep1 )
+//              t2 <- internalGOE( rep2 )
+//
+//              _ <- unify( t1, t2 ) match {
+//                case Some( x ) =>
+//                  for {
+//                    // If the unification is possible, the type parameters belong to the same DJS set
+//                    r <- internalUnion( rep1, rep2 )
+//                    t = x match {
+//                      // x can only be a type parameter if both t1 and t2 were.
+//                      // However, there is no way to predict whether the result of type unification, x,
+//                      // and set union representative, r, are the same element
+//                      // (in principle, both are arbitrary choices between t1=rep1 and t2=rep2)
+//                      // In that case, we always take the set union representative as the new type.
+//                      case _ : TypeParam => r
+//                      case _ => x
+//                    }
+//                    _ <- internalUpdate( r, t )
+//                  } yield ()
+//                case None =>
+//                  throw new TypeException( s"Types ${t1} and ${t2} are incompatible." )
+//              }
+//            } yield ()
+//
+//            /** If one is a type parameter and the other a constant, the constant dominates */
+//            case isType( v : TypeParam, c ) => for { // c not a typeparam for sure
+//              rep <- internalFind( v )
+//              t <- internalGOE( rep )
+//
+//              _ <- unify( t, c ) match {
+//                case Some( newT@XOR( a , b ) ) => for {
+////                  _ <- println( s"XOR: $rep  $a  $b" ).point[internalState]
+//                  _ <- rememberXor(a,rep)
+//                  _ <- rememberXor(b,rep)
+//                  _ <- internalUpdate( rep, newT )
+//                  _ = {
+//                    val xa = a
+//                    val xb = b
+//                    val xp = rep
+//                    val xv = v
+//                    val xc = c
+//                    val w = 1
+//                  }
+//                } yield()
+//                case Some( newT ) =>
+//                  internalUpdate( rep, newT )
+//                case None =>
+//                  throw new TypeException( s"Types ${c} and ${t} are incompatible." )
+//              }
+//            } yield ()
+//
+//            /** isType( c, v: TypeParam ) should not be possible */
+//
+//            case isType( a, b ) => throw new TypeException( s"Types ${a} and ${b} are incompatible." )
+//          }
+//        } yield ()
+//      }
+//
+////    val finalCmp: internalState[Unit] = for {
+////      q <- preCmp
+////      _ <- cmp(q)
+////    } yield ()
+//
+//    val internal( endMap, endDJS, _ , endX) = cmp(queue).run( internal( Map.empty, DisjointSets.empty, 0, Map.empty ) )._1
+//
+//    val expanded = expand( endMap, endDJS, endX )
+//
+//    val r = split( expanded )
+//
+//    r
+//  }
 
 }

@@ -149,4 +149,10 @@ class TestAlphaTransform extends FunSuite with TestingPredefs {
 
     assert( correctRecursiveApplication( Seq(spec) ) )
   }
+
+  test("Tendermit") {
+    val spec = specFromFile( "SimpTendermit1.tla" )
+
+    println(spec)
+  }
 }

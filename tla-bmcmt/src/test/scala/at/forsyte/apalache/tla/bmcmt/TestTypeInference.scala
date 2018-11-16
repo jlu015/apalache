@@ -44,7 +44,7 @@ class TestTypeInference extends FunSuite with TestingPredefs {
         tla.eql( n_x, tla.appFun( n_r, tla.str( "a" ) ) )
       ),
       tla.and(
-        tla.eql( n_r, tla.enumFun( tla.str( "a"), 1, tla.str( "b" ), tla.str( "b" )  ) ),
+        tla.eql( n_r, tla.enumFun( tla.str( "a"), 1, tla.str( "b" ), tla.str( "b" ), tla.str( "c" ), tla.name( "z" )  ) ),
         tla.eql( n_x, tla.appFun( n_r, tla.str( "a" ) ) ),
         tla.eql( n_y, tla.appFun( n_r, tla.str( "b" ) ) )
       )
@@ -80,6 +80,7 @@ class TestTypeInference extends FunSuite with TestingPredefs {
 //    assertThrows[TypeException]( run( exs( 4 ) ) )
 //    predictExprType( exs(5), RecordT( SortedMap( "a" -> IntT(), "b" -> ConstT() ) ) )
 //    predictVarType( exs(6), "x", IntT() )
+//    print( run( exs(7) ) )
   }
 
   ignore( "Application" ) {

@@ -404,7 +404,8 @@ package object types {
     override val signature : String = s"Seq_${elementType.signature}"
   }
 
-  sealed case class XOR( t1: MinimalCellT, t2: MinimalCellT ) extends MinimalCellT {
+//  sealed case class XOR( t1: MinimalCellT, t2: MinimalCellT ) extends MinimalCellT {
+  sealed case class XOR( ts: List[MinimalCellT] ) extends MinimalCellT {
     /**
       * Produce a short signature that uniquely describes the type (up to unification),
       * similar to Java's signature mangling. If one type can be unified to another,

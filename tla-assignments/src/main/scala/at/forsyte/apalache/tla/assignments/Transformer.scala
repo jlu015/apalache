@@ -112,6 +112,9 @@ class Transformer {
   }
 
   /**
+    * Jure, 15.10.2018: DOES NOT WORK WITH NESTED LET-INs !!!
+    * */
+  /**
     * Substitutes applications of operators declared in a LET-IN statement by their bodies.
     *
     * Undefined behaviour on recursive operators.
@@ -136,7 +139,7 @@ class Transformer {
           oper.defs.foreach( OperatorHandler.extract( _, bodyDB ) )
 
           /** inline as if operators were external */
-          inlineAll( body )( bodyDB, srcDB )
+          explicitLetIn( inlineAll( body )( bodyDB, srcDB ) )( srcDB )
         case _ => ex
       }
     }
