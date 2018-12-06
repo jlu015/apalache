@@ -10,7 +10,7 @@ import at.forsyte.apalache.tla.lir.values._
   * Note: consider inmplementing priority of operations. Jure, 24.11.2017
   */
 
-abstract class Printer {
+abstract class Printer {UTFPrinter
   def apply( p_ex : TlaEx ) : String
 
   def apply( p_decl : TlaDecl ) : String = ""
@@ -47,6 +47,8 @@ object UTFPrinter extends Printer {
   val m_supseteq  = "\u2287"
   val m_setminus  = "\u2216"
   val m_times     = "\u00D7"
+  val m_lbrack    = "\u2329"
+  val m_rbrack    = "\u232A"
 
   def pad( s : String ) : String = " %s ".format( s )
 
@@ -190,7 +192,7 @@ object UTFPrinter extends Printer {
           case TlaFunOper.enum => "[%s]".format( opAppStrPairs( args, pad( m_mapto ), ", " ) )
           case TlaFunOper.except => "[%s EXCEPT %s]".format( apply( args.head ), opAppPattern( args.tail, 2, "![%s] = %s", ", " ) )
           case TlaFunOper.funDef => "[%s %s %s]".format( opAppStrPairs( args.tail, pad( m_in ), ", " ), m_mapto, apply( args.head ) )
-          case TlaFunOper.tuple => "(%s)".format( str( args ) )
+          case TlaFunOper.tuple => "%s%s%s".format( m_lbrack, str( args ), m_rbrack )
 
           case TlaSeqOper.append => "Append(%s)".format( str( args ) )
           case TlaSeqOper.concat => mkOpApp( "%%s %s %%s".format( m_ring ), args : _* )
@@ -207,7 +209,7 @@ object UTFPrinter extends Printer {
           case TlaSetOper.funSet => mkOpApp( "[%%s %s %%s]".format( m_rarrow ), args : _* )
           case TlaSetOper.map => "{%s : %s}".format( apply( args.head ), opAppStrPairs( args.tail, pad( m_in ), ", " ) )
           case TlaSetOper.powerset => mkOpApp( "SUBSET %s", args : _* )
-          case TlaSetOper.recSet => opAppStrPairs( args, " : ", ", " )
+          case TlaSetOper.recSet => s"[${opAppStrPairs( args, " : ", ", " )}]"
           case TlaSetOper.seqSet => mkApp( "Seq(%s)", args : _* )
           case TlaSetOper.setminus => mkOpApp( "%%s %s %%s".format( m_setminus ), args : _* )
           case TlaSetOper.subseteq => mkOpApp( "%%s %s %%s".format( m_subseteq ), args : _* )

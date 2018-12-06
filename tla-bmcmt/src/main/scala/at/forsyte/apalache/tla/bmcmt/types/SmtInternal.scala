@@ -1,15 +1,24 @@
 package at.forsyte.apalache.tla.bmcmt.types
 
+import at.forsyte.apalache.tla.bmcmt.InternalCheckerError
 import at.forsyte.apalache.tla.bmcmt.types.NamesAndTypedefs._
+import at.forsyte.apalache.tla.lir.oper.OperArity
 
-import scalaz.State
-import scalaz.Scalaz._
+sealed case class SmtTemplate( arity: OperArity, private val fn: templateType ) {
+
+  def apply( x: String, ts: List[String] ) : SpecState[SmtExpr] =
+    if ( arity.cond( ts.size ) )
+      fn(x,ts)
+    else
+      throw new InternalCheckerError( s"Incorrect template arity. Expected ${arity}, got ${ts.size}." )
+}
 
 sealed case class SmtInternal(
                                partialSpec: String,
                                nextVar: Int,
+                               nextBound: Int,
                                globalVarMap : NameMap,
-                               knownTemplates: Map[String, templateType]
+                               knownTemplates: Map[String, SmtTemplate]
                              ) {
   def +(that: String) : SmtInternal = this.copy( partialSpec = partialSpec + that )
   def inc : SmtInternal = this.copy( nextVar = nextVar + 1)
@@ -17,5 +26,5 @@ sealed case class SmtInternal(
 
 object SmtInternal {
   def init(variables: List[String] = List.empty) : SmtInternal =
-    SmtInternal(partialSpec = "", nextVar = 0, globalVarMap = StatelessFunctions.globalVarMap(variables), knownTemplates = Map.empty)
+    SmtInternal(partialSpec = "", nextVar = 0, nextBound = 0, globalVarMap = StatelessFunctions.globalVarMap(variables), knownTemplates = Map.empty)
 }

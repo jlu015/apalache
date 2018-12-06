@@ -28,6 +28,11 @@ sealed case class seqT( t: SmtType ) extends SmtType {
 sealed case class tupT( ts: List[SmtType] ) extends SmtType {
   override val name : String = tupTypeName
 }
+
+sealed case class sparseTupT( fields:SortedMap[Int,SmtType] ) extends SmtType {
+  override val name : String = tupTypeName
+}
+
 sealed case class funT( arg: SmtType, res: SmtType ) extends SmtType {
   override val name : String = funTypeName
 }
@@ -36,4 +41,8 @@ sealed case class recT( fields: SortedMap[String,SmtType] ) extends SmtType {
 }
 sealed case class alphaT( i: Int ) extends SmtType {
   override val name : String = varTypeName
+}
+
+sealed case class operT( arg: SmtType, res: SmtType ) extends SmtType {
+  override val name : String = operTypeName
 }
