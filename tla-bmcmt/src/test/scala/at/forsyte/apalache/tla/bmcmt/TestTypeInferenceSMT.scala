@@ -1,5 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt
 
+import at.forsyte.apalache.tla.assignments.{AssignmentException, Transformer}
 import at.forsyte.apalache.tla.lir._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -7,15 +8,99 @@ import org.scalatest.junit.JUnitRunner
 import at.forsyte.apalache.tla.bmcmt.types.{ConcreteInterfaceZ3, Eql, SmtInternal, StrConst}
 import at.forsyte.apalache.tla.lir.convenience.tla
 import at.forsyte.apalache.tla.bmcmt.types.NamesAndTypedefs._
+import at.forsyte.apalache.tla.imp._
+import at.forsyte.apalache.tla.lir.db.{BodyDB, DummySrcDB, SourceDB}
 import at.forsyte.apalache.tla.lir.oper.FixedArity
+import at.forsyte.apalache.tla.lir.plugins.UniqueDB
 import types._
 
 import scala.collection.immutable.SortedMap
 import scalaz.State._
-//import scalaz.Scalaz._
+import scalaz.Scalaz._
 
 @RunWith( classOf[JUnitRunner] )
 class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
+
+  val testFolderPath = "src/test/resources/"
+
+  val z3 = ConcreteInterfaceZ3( default_soft_asserts = false )
+
+  def testFromFile( p_file : String, p_next : String = "Next" ) : Boolean = {
+
+    val decls = declarationsFromFile( testFolderPath + p_file )
+
+    testFromDecls( decls, p_next )
+  }
+
+  def testFromDecls( p_decls: Seq[TlaDecl], p_next : String ) : Boolean = {
+    UniqueDB.clear()
+    val bodyDB = new BodyDB
+    val srcDB = DummySrcDB //new SourceDB
+
+    val declsRenamed = OperatorHandler.uniqueVarRename( p_decls )
+
+    val transformer = new Transformer()
+
+    /** Make all LET-IN calls explicit, to move towards alpha-TLA+ */
+
+    val decls = declsRenamed
+
+//    val decls = declsRenamed.map(
+//      {
+//        case d@TlaOperDecl( name, params, body ) =>
+//          TlaOperDecl( name, params, transformer.explicitLetIn( body )( srcDB ) )
+//        case e@_ => e
+//      }
+//    )
+
+    /** Extract variable declarations */
+    val tlaVars = transformer.getVars( decls : _* )
+
+    /** Extract transition relation */
+    val nextBody = findBodyOf( p_next, decls : _* )
+
+    /** If extraction failed, throw */
+    //    assert( !nextBody.isNull )
+    if ( nextBody.isNull )
+      throw new AssignmentException(
+        "%s not found or not an operator".format( p_next )
+      )
+
+    /** Sanity check */
+    assert( nextBody.ID.valid )
+    //      throw new AssignmentException(
+    //        "%s has an invalid ID".format( p_nextName )
+    //      )
+
+    /** Preprocess body (inline operators, replace UNCHANGED, turn equality to set membership, etc.) */
+    val cleaned = Some(nextBody) //transformer( nextBody, decls : _* )( bodyDB, srcDB )
+
+    /** Sanity check */
+    assert( cleaned.isDefined && cleaned.get.ID.valid )
+    //      throw new AssignmentException(
+    //        "%s could not be sanitized".format( p_nextName )
+    //      )
+
+    val phi = cleaned.get
+
+//    println(s"phi: ${phi}")
+
+    val bodyName = "nextBody"
+
+    val varMap : NameMap = (tlaVars map { s => (s,StatelessFunctions.varNameMod(s))}).toMap
+
+    val declMap : DeclMap = (decls.filter {_.isInstanceOf[TlaOperDecl]} map {  d => d.name -> d.asInstanceOf[TlaOperDecl] }).toMap
+
+    z3.specFramework( tlaVars.toList )(
+      for {
+        _ <- z3.declareConst( bodyName )
+        spec <- z3.nabla( bodyName, phi, varMap, declMap )
+//        _ = { println( spec.prettyPrint ) }
+        _ <- z3.assertSMT( spec )
+      } yield()
+    ).run( SmtInternal.init() )._2
+
+  }
 
   val exs : Vector[OperEx] = Vector(
     // Logic
@@ -176,12 +261,12 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
     tla.caseOther( n_e, n_p, n_x, n_q, n_y, n_r, n_z ),
 
     // except, rec or fun
-    tla.except( n_f, tla.str("a"), 1, tla.str( "b" ) , tla.str( "b" ) ),
-    tla.dom( tla.except( n_f, tla.str("a"), 1, tla.str( "b" ) , 2 ) ),
+    tla.except( n_f, tla.tuple( tla.str( "a" ) ), 1, tla.tuple( tla.str( "b" ) ), tla.str( "b" ) ),
+    tla.dom( tla.except( n_f, tla.tuple( tla.str( "a" ) ), 1, tla.tuple( tla.str( "b" ) ), 2 ) ),
 
     // app, record or fun
-    tla.and( tla.eql( tla.appFun( n_f, tla.str( "a" ) ), 1 ), tla.eql( tla.appFun( n_f, "b" ), 2 ) ),
-    tla.and( tla.eql( tla.appFun( n_f, tla.str( "a" ) ), 1 ), tla.eql( tla.appFun( n_f, "b" ), tla.str( "b" ) ) ),
+    tla.and( tla.eql( tla.appFun( n_f, tla.str( "a" ) ), 1 ), tla.eql( tla.appFun( n_f, tla.str( "b" ) ), 2 ) ),
+    tla.and( tla.eql( tla.appFun( n_f, tla.str( "a" ) ), 1 ), tla.eql( tla.appFun( n_f, tla.str( "b" ) ), tla.str( "b" ) ) ),
 
     // app, tuple or seq
     tla.and( tla.eql( tla.appFun( n_f, 1 ), tla.str( "a" ) ), tla.eql( tla.appFun( n_f, 2 ), 2 ) ),
@@ -196,11 +281,11 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
     tla.in( n_S, n_S )
   )
 
-  val z3 = ConcreteInterfaceZ3( default_soft_asserts = false )
-
   val vars = List(
-    "x", "y", "z", "S", "T", "Q", "f", "C", "p", "q", "r", "e"
+    "x", "y", "z", "S", "T", "Q", "f", "p", "q", "r", "e"
   )
+
+  val varMap : NameMap = (vars map { s => (s,StatelessFunctions.varNameMod(s))}).toMap
 
   ignore( "Basic SMT" ) {
     val cmp = for {
@@ -213,11 +298,11 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
       sat <- z3.isSat
     } yield sat
 
-    val (int,sat) = cmp.run(SmtInternal.init())
-    val spec = int.partialSpec
+    val (_,sat) = cmp.run(SmtInternal.init())
+//    val spec = int.partialSpec
 
-    println(s"SAT: ${sat}")
-    println(spec)
+//    println(s"SAT: ${sat}")
+//    println(spec)
     assert(sat)
 
   }
@@ -282,25 +367,15 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
 
   }
 
-  test( "Nabla" ){
+  test( "Nabla: Builtin" ){
 
     val bodyName = "b"
-
-    val declA = tla.declOp( "A", tla.appOp( n_B, n_p ), OperFormalParam( "B", FixedArity( 1 ) ), SimpleFormalParam( "p" ) )
-    val declC = tla.declOp( "C", 42, SimpleFormalParam( "x" ) )
-
-//    println( exs.last )
-
-    val varMap = (vars map { s => (s,StatelessFunctions.varNameMod(s))}).toMap
-
-    val z3 = ConcreteInterfaceZ3( default_soft_asserts = false )
 
     def cmpNablas( v: Vector[OperEx] ) : List[Boolean] = v.toList map { phi =>
       z3.specFramework( vars )(
         for {
           _ <- z3.declareConst( bodyName )
-          spec <- z3.nabla( bodyName, phi, varMap )
-//          _ = {println(spec.prettyPrint)}
+          spec <- z3.nabla( bodyName, phi, varMap, Map.empty )
           _ <- z3.assertSMT( spec )
         } yield()
       )
@@ -308,83 +383,122 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
       _.run( SmtInternal.init() )._2
     }
 
-//    val nablas = cmpNablas( exs )
-    val nablas = cmpNablas( Vector( exs(94) ) )
-    println(exs(94))
-    val mustFail = cmpNablas( failExs ).take(0)
+    val vec = exs
+    val fvec = failExs
+
+    val nablas = cmpNablas( vec )
+    val mustFail = cmpNablas( fvec )
 
     val fails = nablas.zipWithIndex filterNot { case(b, i) => b } map { _._2 }
     val failFails = mustFail.zipWithIndex filter { case(b, i) => b } map { _._2 }
 
-    println("Fails on SAT:")
-    fails foreach { i => println(s"$i => ${exs(i)}") }
-
-    println("Fails on UNSAT:")
-    failFails foreach { i => println(s"$i => ${failExs(i)}") }
+    if (fails.nonEmpty) {
+      println( "Fails on SAT:" )
+      fails foreach { i => println( s"$i => ${vec( i )}" ) }
+    }
+    if( failFails.nonEmpty ) {
+      println( "Fails on UNSAT:" )
+      failFails foreach { i => println( s"$i => ${fvec( i )}" ) }
+    }
 
     assert( fails.isEmpty && failFails.isEmpty )
 
+  }
 
+  test( "Nabla: UserOps" ) {
+    val declA = tla.declOp( "A", 42 )
+    val declB = tla.declOp( "B", n_x, SimpleFormalParam("x") )
+    val declC = tla.declOp( "C", tla.plus( n_x, n_y ) , SimpleFormalParam("x") )
+    val declD = tla.declOp( "D", tla.appDecl( declB, 0 ) )
+    val declE = tla.declOp( "E", n_p, OperFormalParam( "Q", FixedArity( 1 ) ), SimpleFormalParam( "p" ) )
+    val declF = tla.declOp( "F", tla.appOp( n_Q, n_p ), OperFormalParam( "Q", FixedArity( 1 ) ), SimpleFormalParam( "p" ) )
+    val declG = tla.declOp( "G", tla.appDecl( declF, "C", 1 ) )
 
+    val declRM = tla.declOp("RM", tla.enumSet( 1,2,3,4 ) )
+    val declPrepare = tla.declOp(
+      "Prepare",
+      tla.and(
+        tla.eql( tla.appFun( n_f, n_p ), tla.str( "a" ) ),
+        tla.primeEq(
+          n_f,
+          tla.except(
+            n_f,
+            tla.tuple( n_p ),
+            tla.str( "b" )
+          )
+        )
+      ),
+      SimpleFormalParam( "p" ) )
 
-    //    val nablas = exs map {phi => z3.nabla( bodyName, phi, varMap )} map { _.run(SmtInternal.init())._2}
+    val declEPrepare = tla.declOp( "Next", tla.exists( n_t, tla.appDecl( declRM ) , tla.appDecl( declPrepare, n_t)))
 
-//    exs zip nablas foreach { case (ex,nbla) =>
-//      println( s"nabla($bodyName, ${ex}, m): ${nbla.prettyPrint}\n" )
-//    }
+    val decls : Vector[TlaOperDecl] = Vector(
+      declA,
+      declB,
+      declC,
+      declD,
+      declE,
+      declF,
+      declG,
+      declRM,
+      declPrepare,
+      declEPrepare
+    )
+
+    val declMap : DeclMap = (decls map {  d => d.name -> d }).toMap
+
+    val bodyName = "e"
+
+    def displayParam(p: FormalParam) : String = p match {
+      case SimpleFormalParam(x) => x
+      case OperFormalParam(x, FixedArity(n)) if n > 0 => s"$x(${List.fill(n)("_") mkString ", "})"
+      case OperFormalParam(x, _) => s"$x(?)"
+    }
+
+    def nTs(n: Int) : List[String] = Range(0,n).toList map { i=> s"t_$i"}
+
+    def cmpTemplates( v: Vector[TlaOperDecl] ) : List[Boolean] = v.toList map { decl =>
+      val ts : List[String] = nTs( decl.formalParams.size )
+      z3.specFramework( vars )(
+        for {
+          _ <- z3.declareConst( bodyName )
+          _ <- ts traverseS {z3.declareConst(_)}
+          expr <- z3.templateFromDecl( decl, varMap, declMap )( bodyName, ts )
+//          _ = { println( s"${decl.name}(${ decl.formalParams map displayParam mkString ", " }) = ${decl.body} -> template_${decl.name}(${ bodyName +: ts mkString ", " }) := ${expr.prettyPrint}" ) }
+          _ <- z3.assertSMT( expr )
+        } yield()
+      )
+    } map {
+      _.run( SmtInternal.init() )._2
+    }
+
+    val results = cmpTemplates( decls )
+    val fails = results.zipWithIndex filterNot { case(b, i) => b } map { _._2 }
+
+    if (fails.nonEmpty) {
+      println( "Fails on SAT:" )
+      fails foreach { i => println( s"$i => ${decls( i )}" ) }
+    }
+    assert( fails.isEmpty )
+
 
   }
 
-  ignore("Operators: +") {
-
-    val z3 = ConcreteInterfaceZ3( default_soft_asserts = false )
-
-    val variables : List[String] = List("x")
-    val ex = tla.plus( "x", 2 )
-
-    val cmp = for {
-      _ <- z3.declareDatatypes()
-      _ <- z3.addFunctions()
-      _ <- z3.addAxioms()
-      _ <- z3.addTlaVariableConstants( variables )
-      _ <- z3.declareConst("qq")
-      _ <- z3.declareConst("qq_0")
-      _ <- z3.declareConst("qq_1")
-//      _ <- z3.constraintFromSig( ex )
-      //      _ <- closing() // NOTE: z3 implementation doesn't seem to want this in the parsed spec.
-      sat <- z3.isSat
-    } yield sat
-
-    val (int,sat) = cmp.run(SmtInternal.init())
-    val spec = int.partialSpec
-
-    println(s"SAT: ${sat}")
-//    println(spec)
+  ignore( "Spec from file: test1 " ) {
+    val sat = testFromFile( "test1.tla" )
+    assert(sat)
+  }
+  ignore( "Spec from file: test2 " ) {
+    val sat = testFromFile( "test2.tla" )
+    assert(sat)
+  }
+  test( "Spec from file: TCommit " ) {
+    val sat = testFromFile( "TCommit.tla", "TCNext" )
     assert(sat)
   }
 
-  ignore("Operators: U") {
-
-    val z3 = ConcreteInterfaceZ3( default_soft_asserts = false )
-
-    val variables : List[String] = List("x")
-    val ex = tla.cup( "x", "x" )
-
-    val cmp = for {
-      _ <- z3.declareConst("qq")
-      _ <- z3.declareConst("qq_0")
-      _ <- z3.declareConst("qq_1")
-//      _ <- z3.constraintFromSig( ex )
-    } yield ()
-
-    val fw = z3.specFramework( variables )(cmp)
-
-    val (int,sat) = fw.run(SmtInternal.init())
-    val spec = int.partialSpec
-
-    println(s"SAT: ${sat}")
-    //    println(spec)
-    assert(sat)
-  }
+//  test( "Spec from file: RNC " ) {
+//    testFromFile( "raft_no_constants.tla" )
+//  }
 
 }

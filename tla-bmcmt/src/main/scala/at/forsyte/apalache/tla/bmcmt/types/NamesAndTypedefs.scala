@@ -1,5 +1,7 @@
 package at.forsyte.apalache.tla.bmcmt.types
 
+import at.forsyte.apalache.tla.lir.{TlaOperDecl, UID}
+
 import scalaz.State
 
 object NamesAndTypedefs {
@@ -15,6 +17,10 @@ object NamesAndTypedefs {
   type TypeMap = Map[alphaT, StrConst]
   
   type NameMap = Map[String, String]
+
+  type DeclMap = Map[String, TlaOperDecl]
+
+  type LabelMap = Map[String, UID]
 
   val typeName          : String = "T"
   val intTypeName       : String = "intT"

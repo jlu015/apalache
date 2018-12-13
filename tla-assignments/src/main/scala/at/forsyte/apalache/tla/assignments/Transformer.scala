@@ -111,6 +111,19 @@ class Transformer {
     OperatorHandler.replaceWithRule( p_ex, exFun, srcDB )
   }
 
+
+  def isRecursive( d : TlaOperDecl ) : Boolean =
+    RecursiveProcessor.computeFromTlaEx[Boolean](
+      RecursiveProcessor.DefaultFunctions.naturalTermination,
+      _ == NameEx( d.name ),
+      _ == NameEx( d.name ),
+      RecursiveProcessor.DefaultFunctions.childCollect[TlaEx, Boolean](
+        false,
+        _ || _
+      )
+    )( d.body )
+
+
   /**
     * Jure, 15.10.2018: DOES NOT WORK WITH NESTED LET-INs !!!
     * */

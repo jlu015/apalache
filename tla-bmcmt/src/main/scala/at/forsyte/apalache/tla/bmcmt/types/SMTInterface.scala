@@ -10,7 +10,7 @@ import at.forsyte.apalache.tla.lir.values._
 import NamesAndTypedefs.{SpecState, _}
 import StatelessFunctions._
 import at.forsyte.apalache.tla.bmcmt.types.CounterStates.{CounterState, CounterType}
-import at.forsyte.apalache.tla.lir.control.TlaControlOper
+import at.forsyte.apalache.tla.lir.control.{LetInOper, TlaControlOper}
 import at.forsyte.apalache.tla.lir.oper._
 
 import scalaz.State
@@ -162,7 +162,7 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
   def isSat : SpecState[Boolean] = gets[SmtInternal, Boolean] { s =>
     val ctx = new Context()
     val solver = ctx.mkSolver()
-    println(s.partialSpec)
+//    println(s.partialSpec)
     solver.add( ctx.parseSMTLIB2String( s.partialSpec, null, null, null, null ) )
     solver.check.toString == "SATISFIABLE"
 //    true
@@ -186,10 +186,28 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
     _ <- declareConst( name, typeName )
   } yield name
 
+  def freshBoundVar : SpecState[String] =
+    State[SmtInternal, String] {
+      s => (s.incB, s"i_${s.nextBound}")
+    }
+
+  def linkedFreshVar( uid : UID ) : SpecState[String] = for {
+    name <- freshVar
+    _ <- modify[SmtInternal] {
+      s => s.copy( labelMap = s.labelMap + (name -> uid) )
+    }
+  } yield name
+
   protected def nFresh(n: Int) : SpecState[TypeMap] =
     Range(0,n).toList traverseS { i =>
       freshVar map { s => alphaT(i) -> strToSmtConst( s ) }
     } map { _.toMap }
+
+  protected def nLinkedFresh(n: Int, uid: UID) : SpecState[TypeMap] =
+    Range(0,n).toList traverseS { i =>
+      linkedFreshVar(uid) map { s => alphaT(i) -> strToSmtConst( s ) }
+    } map { _.toMap }
+
 
 
   sealed case class PreDelta( m: TypeMap, typeLst: List[SmtType] )
@@ -207,7 +225,10 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
           }
 
         def resolveOverload( pds: List[PreDelta] ) : SpecState[SmtExpr] =
-          runCounterStateBound( pds traverseS joinDeltas map { Or( _ :_*) } )
+          runCounterStateBound( pds traverseS joinDeltas map {
+              case h :: Nil => h
+              case lst => Or( lst : _* )
+          } )
 
         implicit def singletonList( e: PreDelta ): List[PreDelta] = List( e )
 
@@ -343,6 +364,13 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
               )
             }
 
+          case TlaFiniteSetOper.cardinality =>
+            freshVar map { f =>
+              PreDelta(
+                m = Map( alphaT( 0 ) -> f ),
+                typeLst = List( intT, setT( alphaT( 0 ) ) )
+              )
+            }
           // Functions
           case TlaFunOper.domain =>
             nFresh( 2 ) map { m =>
@@ -385,40 +413,54 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
 
           // Overloaded
 
-            // TODO: Overloading
           case TlaFunOper.except =>
             // except takes 2n + 1 args, the 1st is the function, followed by n key-value pairs
-            // We need 2 type parameters
+            // each key is a m-size tuple
+            // We need m + 1 type parameters
             val n = ( p_ex.args.size - 1 ) / 2
 
-            val keys = p_ex.args.toList.zipWithIndex filter {
+            val keys = p_ex.args.toList.tail.zipWithIndex filter {
               case (_, j) => j % 2 == 0
             }
 
+            val mOpt = (keys map {
+              case (OperEx( TlaFunOper.tuple, args@_* ), _) => args.size
+              case _ => -1
+            }).distinct match {
+              case emm :: Nil if emm > 0 => Some(emm)
+              case _ => None
+            }
+
+            if ( mOpt.empty ) throw new InternalCheckerError(s"EXCEPT arguments in ${p_ex} are not tuples")
+
+            val emm = mOpt.get
+
             val recOpt = (keys map {
-              case (ValEx( TlaStr( s ) ), _) => Some(s)
+              /** Records CANNOT use currying */
+              case ( OperEx( TlaFunOper.tuple, ValEx( TlaStr( s ) ) ), _) => if( emm == 1) Some(s) else None
               case _ => None
             } ).sequence
 
-            nFresh( 2 + n ) map { m =>
+            nFresh( (emm + 1) + n ) map { m =>
               val recpd = recOpt map { ks =>
-                val recMap = SortedMap(ks zip Range(2, n + 2) map { case (k,j) =>
+                val recMap = SortedMap(ks zip Range(emm + 1, emm + n + 1) map { case (k,j) =>
                   k -> alphaT( j )
                 } :_*)
                 List(
                   PreDelta(
                     m = m,
                     typeLst = List.fill( 2 )( recT( recMap ) ) ++:
-                      (Range(2, n + 2).toList flatMap { j => List( strT, alphaT( j ) ) })
+                      ( Range( emm + 1, emm + n + 1 ).toList flatMap { j => List( tupT( List( strT ) ), alphaT( j ) ) })
                   )
                 )
               }
+              val mFold = Range(0,emm).reverse.foldLeft[SmtType]( alphaT( emm ) ){ case (a, j) => funT( alphaT(j), a ) }
               recpd.getOrElse( List.empty[PreDelta] ) ++: List(
                 // Fun
                 PreDelta(
                   m = m,
-                  typeLst = List.fill( 2 )( funT( alphaT( 0 ), alphaT( 1 ) ) ) ++:
-                    List.fill( n )( List( alphaT( 0 ), alphaT( 1 ) ) ).flatten
+                  typeLst = List.fill( 2 )( mFold ) ++:
+                    List.fill( n )( List( tupT( Range( 0, emm ).toList map alphaT ), alphaT( emm ) ) ).flatten
                 )
               )
             }
@@ -436,14 +478,14 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
                   typeLst = List( alphaT( 2 ), seqT( alphaT( 2 ) ), intT )
                 )
               )
-              // for records and sequences we need the actual value of the arg
+              // for records and tuples we need the actual value of the arg
               val Seq(_, exactArg) = p_ex.args
 
               val other = exactArg match {
                 case ValEx( TlaStr( s ) ) => List(
                   PreDelta(
                     m = m,
-                    typeLst = List( alphaT( 3 ), recT( SortedMap( s -> alphaT( 3 ) ) ) , intT )
+                    typeLst = List( alphaT( 3 ), recT( SortedMap( s -> alphaT( 3 ) ) ) , strT )
                   )
                 )
                 case ValEx( TlaInt( i ) ) => List(
@@ -578,6 +620,9 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
               )
             }
 
+//          case TlaSeqOper.subseq =>
+
+
           // Control
           case TlaControlOper.ifThenElse =>
             freshVar map { f =>
@@ -606,6 +651,55 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
               )
             }
 
+          // Operator application
+          case TlaOper.apply =>
+            p_ex.args.size - 1 match {
+              case 0 => freshVar map { f =>
+                PreDelta(
+                  m = Map( alphaT( 0 ) -> f ),
+                  typeLst = List( alphaT( 0 ), alphaT( 0 ) )
+                )
+              }
+              case 1 => nFresh( 2 ) map { m =>
+                PreDelta(
+                  m = m,
+                  typeLst = List( alphaT( 1 ), operT( alphaT( 0 ), alphaT( 1 ) ), alphaT( 0 ) )
+                )
+              }
+              case n => nFresh( n + 1 ) map { m =>
+                PreDelta(
+                  m = m,
+                  typeLst = List( alphaT( n ), operT( tupT( Range( 0, n ).toList map alphaT ), alphaT( n ) ) ) ++:
+                    ( Range( 0, n ).toList map alphaT )
+                )
+              }
+            }
+
+            // TLC operators
+          case TlcOper.print =>
+            freshVar map { f =>
+              PreDelta(
+                m = Map( alphaT( 0 ) -> f ),
+                typeLst = List( alphaT( 0 ), strT, alphaT( 0 ) )
+              )
+            }
+
+          case TlcOper.colonGreater =>
+            nFresh( 2 ) map { m =>
+              PreDelta(
+                m = m,
+                typeLst = List( funT( alphaT( 0 ), alphaT( 1 ) ), alphaT( 0 ), alphaT( 1 ) )
+              )
+            }
+
+          case TlcOper.atat =>
+            nFresh( 2 ) map { m =>
+              PreDelta(
+                m = m,
+                typeLst = List.fill(3)( funT( alphaT( 0 ), alphaT( 1 ) ) )
+              )
+            }
+
           case _ =>
             throw new InternalCheckerError( s"Signature for operator [${p_ex.oper.name}] is not implemented" )
         }
@@ -619,40 +713,125 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
 
   def dummyTemplateCall : SpecState[SmtTemplate] = dummyTemplate.point[SpecState]
 
-  def nabla(vname: String, psi: TlaEx, m: NameMap ) : SpecState[SmtExpr] = psi match {
+  def templateFromDecl( decl: TlaOperDecl, m : NameMap, dm: DeclMap  ) : SmtTemplate = decl match {
+    case TlaOperDecl( name, params, body ) =>
+      val f : templateType =
+        ( tBody : String, tsArgs : List[String] ) => {
+          val m_x = (params map { _.name} zip tsArgs).toMap
+//          println( s"phi: ${body}" )
+          nabla( tBody, body, m ++ m_x, dm )
+        } : SpecState[SmtExpr]
+      SmtTemplate( decl.operator.arity, f )
+  }
+
+  def memoGetTemplate( t: TlaUserOper, m: NameMap, dm: DeclMap )( implicit rememberTemplate : Boolean = true ) : SpecState[SmtTemplate] =
+    for {
+      templOpt <- gets[SmtInternal, Option[SmtTemplate]] { s =>
+        s.knownTemplates.get( t.name )
+      }
+      ret <- templOpt match {
+        case Some( template ) => template.point[SpecState]
+        case _ =>
+          val templ = templateFromDecl( t.decl, m, dm )
+          State[SmtInternal, SmtTemplate] {
+            s =>
+              if (rememberTemplate)
+                (s.copy( knownTemplates = s.knownTemplates + ( t.name -> templ ) ), templ)
+              else (s, templ)
+          }
+      }
+    } yield ret
+
+  def instanceOf( vname: String, decl: TlaOperDecl, m: NameMap, dm: DeclMap ) : SpecState[SmtExpr] = {
+    val templateS = memoGetTemplate( decl.operator, m, dm )
+    decl.formalParams.size match {
+      case 0 => templateS flatMap {
+        t => t( vname, List.empty )
+      }
+      case 1 => for {
+        g1 <- freshVar
+        g2 <- freshVar
+        templ <- templateS
+        tExpr <- templ( g2, List( g1 ) )
+      } yield And( Eql( vname, ArgList( operTypeName, g1, g2 ) ), tExpr )
+
+      case k => for {
+        bound <-freshBoundVar
+        gs <- Range(0,k+1).toList traverseS { _ => freshVar }
+        templ <- templateS
+        templEx <- templ( gs.head, gs.tail )
+      } yield
+        Exists(
+          List( ArgList( bound, z3Int ) ),
+          And(
+            Eql( vname, ArgList( operTypeName, ArgList( tupTypeName, bound ), gs.head ) ),
+            Eql( ArgList( tupSizeFunName, bound ), k.toString ),
+            templEx,
+            And( Range(1, k + 1) zip gs.tail map { case (j, gj) => ArgList( tupIdxFunName, bound, j.toString, gj ) } : _* )
+          )
+        )
+    }
+  }
+
+
+
+  def nabla(vname: String, psi: TlaEx, m: NameMap, dm : DeclMap )( implicit rememberTemplates : Boolean = true ) : SpecState[SmtExpr] = psi match {
     case ValEx( TlaInt( _ ) ) => Eql( vname, intTypeName ).asInstanceOf[SmtExpr].point[SpecState]
     case ValEx( TlaStr( _ ) ) => Eql( vname, strTypeName ).asInstanceOf[SmtExpr].point[SpecState]
     case ValEx( TlaBool( _ ) ) => Eql( vname, boolTypeName ).asInstanceOf[SmtExpr].point[SpecState]
     case OperEx( TlaActionOper.prime, NameEx( n ) ) => Eql( vname, primeVarNameMod( varNameMod( n ) ) ).asInstanceOf[SmtExpr].point[SpecState]
     case NameEx( n ) =>
-      // TODO: Case split, n might be an operator name passed to a higher-order operator as an argument
-      Eql( vname, m(n) ).asInstanceOf[SmtExpr].point[SpecState]
+      // Case split, n might be an operator name passed to a higher-order operator as an argument
+      dm.get( n ) match {
+        case Some( decl ) =>
+          instanceOf( vname, decl, m, dm)
+
+        case None => m.get( n ) match {
+          case Some( smtVar ) => Eql( vname, m( n ) ).asInstanceOf[SmtExpr].point[SpecState]
+          case None => throw new InternalCheckerError(s"Free variable $n is neither a TLA+ variable nor an operator name.")
+        }
+      }
+    case OperEx( TlaActionOper.unchanged, arg ) =>
+      val primedArg = RecursiveProcessor.transformTlaEx(
+        _.isInstanceOf[NameEx],
+        {
+          case NameEx( n ) => OperEx( TlaActionOper.prime, NameEx( n ) )
+          case x => x
+        },
+        RecursiveProcessor.DefaultFunctions.identity
+      )( arg )
+      nabla( vname, Builder.eql( primedArg , arg ), m, dm )
+
+    case OperEx( letIn : LetInOper, body ) =>
+      val newDm = dm ++ (letIn.defs map { opDef => opDef.name -> opDef } ).toMap
+      val newNames = letIn.defs map { _.name }
+      for {
+        post <- nabla( vname, body, m, newDm )
+        _ <- modify[SmtInternal] { s =>
+          s.copy( knownTemplates = s.knownTemplates -- newNames )
+        }
+      } yield post
+
     case ex@OperEx( oper, args@_*) => for {
       mNew <- boundVariableMap( ex ) map {m ++ _}
       frees <- args.toList traverseS { a =>
         freshVar map { (a, _) }
       }
       operTempl <- oper match {
-          // TODO, replace with lookup for precomputed user oper templates.
-        case t : TlaUserOper => for {
-          templOpt <- gets[SmtInternal, Option[SmtTemplate]] { s =>
-            s.knownTemplates.get( t.name )
-          }
-        } yield templOpt match {
-          case Some( template ) => template
-          case _ => dummyTemplate
-        }
+        case t : TlaUserOper => memoGetTemplate( t, m, dm )( rememberTemplates )
 
         case _ => templateFromOper( ex ).point[SpecState]
       }
       templateCall <- operTempl( vname, frees map { _._2})
       subNablas <- frees traverseS { case (a,f) =>
-        nabla(f, a, mNew)
+        nabla(f, a, mNew, dm)
       }
     } yield And( templateCall +: subNablas :_* )
     case _ =>
       throw new InternalCheckerError(s"deltaTilde applied to unexpected expression: ${psi}")
   }
+
+
 
   def specFramework( variableNames: List[String] )( cmp: void ): SpecState[Boolean] = for {
     _ <- declareDatatypes()
@@ -668,7 +847,7 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
   def boundVariableMap( operEx: OperEx ) : SpecState[NameMap] = operEx match {
     case OperEx( TlaBoolOper.forall | TlaBoolOper.exists | TlaOper.chooseBounded | TlaSetOper.filter , NameEx( i ), _, _ ) =>
       freshVar map { s => Map(i -> s) }
-    case OperEx( TlaSetOper.map, _, args@_* ) =>
+    case OperEx( TlaSetOper.map | TlaFunOper.funDef, _, args@_* ) =>
       val names = args.toList.zipWithIndex filter { case (_,i) => i % 2 == 0  } map { _._1 }
       names traverseS { case NameEx( i ) =>
         freshVar map { i -> _ }

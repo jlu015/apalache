@@ -17,14 +17,15 @@ sealed case class SmtInternal(
                                partialSpec: String,
                                nextVar: Int,
                                nextBound: Int,
-                               globalVarMap : NameMap,
-                               knownTemplates: Map[String, SmtTemplate]
+                               knownTemplates: Map[String, SmtTemplate],
+                               labelMap: LabelMap
                              ) {
   def +(that: String) : SmtInternal = this.copy( partialSpec = partialSpec + that )
   def inc : SmtInternal = this.copy( nextVar = nextVar + 1)
+  def incB : SmtInternal = this.copy( nextBound = nextBound + 1)
 }
 
 object SmtInternal {
   def init(variables: List[String] = List.empty) : SmtInternal =
-    SmtInternal(partialSpec = "", nextVar = 0, nextBound = 0, globalVarMap = StatelessFunctions.globalVarMap(variables), knownTemplates = Map.empty)
+    SmtInternal(partialSpec = "", nextVar = 0, nextBound = 0, knownTemplates = Map.empty, labelMap = Map.empty)
 }
