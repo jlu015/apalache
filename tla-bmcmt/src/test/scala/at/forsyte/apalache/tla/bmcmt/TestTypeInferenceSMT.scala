@@ -497,8 +497,8 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
     assert(sat)
   }
 
-//  test( "Spec from file: RNC " ) {
-//    testFromFile( "raft_no_constants.tla" )
-//  }
+  test( "Spec from file: RNC " ) {
+    testFromFile( "raft_no_constants.tla" )
+  }
 
 }

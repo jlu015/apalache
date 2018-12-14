@@ -620,7 +620,13 @@ sealed case class ConcreteInterfaceZ3( default_soft_asserts: Boolean = true ) ex
               )
             }
 
-//          case TlaSeqOper.subseq =>
+          case TlaSeqOper.subseq =>
+            freshVar map { f =>
+              PreDelta(
+                m = Map( alphaT( 0 ) -> f ),
+                typeLst = List( seqT( alphaT( 0 ) ), intT, intT, seqT( alphaT( 0 ) ) )
+              )
+            }
 
 
           // Control
