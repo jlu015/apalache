@@ -1,6 +1,6 @@
 package at.forsyte.apalache.tla.bmcmt.types
 
-import at.forsyte.apalache.tla.lir.{TlaOperDecl, UID}
+import at.forsyte.apalache.tla.lir.{TlaEx, TlaOperDecl, UID}
 
 import scalaz.State
 
@@ -15,6 +15,8 @@ object NamesAndTypedefs {
   type templateType = (String, List[String]) => SpecState[SmtExpr]
 
   type TypeMap = Map[alphaT, StrConst]
+
+  type ConstMap = Map[String, TlaEx]
   
   type NameMap = Map[String, String]
 

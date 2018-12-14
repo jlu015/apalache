@@ -1,5 +1,5 @@
 ------------------------------- MODULE TCommit ------------------------------
-(* CONSTANT *) RM ==  {1,2,3,4}    \* The set of participating resource managers
+CONSTANT RM  \* The set of participating resource managers
 VARIABLE rmState  \* `rmState[rm]' is the state of resource manager rm.
 -----------------------------------------------------------------------------
 TCTypeOK == 

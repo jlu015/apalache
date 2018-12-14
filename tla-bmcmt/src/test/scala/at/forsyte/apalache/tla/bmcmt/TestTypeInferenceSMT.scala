@@ -25,14 +25,14 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
 
   val z3 = ConcreteInterfaceZ3( default_soft_asserts = false )
 
-  def testFromFile( p_file : String, p_next : String = "Next" ) : Boolean = {
+  def testFromFile( p_file : String, p_constMap: ConstMap = Map.empty, p_next : String = "Next" ) : Boolean = {
 
     val decls = declarationsFromFile( testFolderPath + p_file )
 
-    testFromDecls( decls, p_next )
+    testFromDecls( decls, p_constMap, p_next )
   }
 
-  def testFromDecls( p_decls: Seq[TlaDecl], p_next : String ) : Boolean = {
+  def testFromDecls( p_decls: Seq[TlaDecl], p_constMap: ConstMap, p_next : String ) : Boolean = {
     UniqueDB.clear()
     val bodyDB = new BodyDB
     val srcDB = DummySrcDB //new SourceDB
@@ -41,17 +41,12 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
 
     val transformer = new Transformer()
 
-    /** Make all LET-IN calls explicit, to move towards alpha-TLA+ */
+    /** Replace all constants with their values (as 0-arity operators) */
 
-    val decls = declsRenamed
-
-//    val decls = declsRenamed.map(
-//      {
-//        case d@TlaOperDecl( name, params, body ) =>
-//          TlaOperDecl( name, params, transformer.explicitLetIn( body )( srcDB ) )
-//        case e@_ => e
-//      }
-//    )
+    val decls = declsRenamed map {
+      case TlaConstDecl( n ) => TlaOperDecl( n, List.empty[FormalParam], p_constMap( n ) )
+      case x => x
+    }
 
     /** Extract variable declarations */
     val tlaVars = transformer.getVars( decls : _* )
@@ -493,12 +488,25 @@ class TestTypeInferenceSMT extends FunSuite with TestingPredefs {
     assert(sat)
   }
   test( "Spec from file: TCommit " ) {
-    val sat = testFromFile( "TCommit.tla", "TCNext" )
+    val cMap = Map( "RM" -> tla.enumSet(1,2,3,4) )
+    val sat = testFromFile( "TCommit.tla", p_constMap = cMap, p_next =  "TCNext" )
     assert(sat)
   }
 
   test( "Spec from file: RNC " ) {
-    testFromFile( "raft_no_constants.tla" )
+    val cMap = Map(
+      "Server" -> tla.dotdot( 1, 10 ),
+      "Value" -> tla.enumSet( tla.str( "a" ), tla.str( "b" ), tla.str( "c" ) ),
+      "Follower" -> tla.int( 1 ),
+      "Candidate" -> tla.int( 2 ),
+      "Leader" -> tla.int( 3 ),
+      "Nil" -> tla.int( 0 ),
+      "RequestVoteRequest" -> tla.int( 1 ),
+      "RequestVoteResponse" -> tla.int( 2 ),
+      "AppendEntriesRequest" -> tla.int( 3 ),
+      "AppendEntriesResponse" -> tla.int( 4 )
+    )
+    testFromFile( "raft.tla", p_constMap = cMap )
   }
 
 }

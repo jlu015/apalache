@@ -1,4 +1,4 @@
---------------------------------- MODULE raft_no_constants ---------------------------------
+--------------------------------- MODULE raft ---------------------------------
 \* This is the formal specification for the Raft consensus algorithm.
 \*
 \* Copyright 2014 Diego Ongaro.
@@ -8,26 +8,20 @@
 EXTENDS Naturals, FiniteSets, Sequences, TLC
 
 \* The set of server IDs
-(*CONSTANTS*) Server == 1..10
+CONSTANTS Server
 
 \* The set of requests that can go into the log
-(*CONSTANTS*) Value == {"a", "b", "c"}
+CONSTANTS Value
 
 \* Server states.
-(*CONSTANTS *)
-Follower == 1
-Candidate == 2
-Leader == 3
+CONSTANTS Follower, Candidate, Leader
 
 \* A reserved value.
-(*CONSTANTS*) Nil == 0
+CONSTANTS Nil
 
 \* Message types:
-(* CONSTANTS *)
-RequestVoteRequest == 1
-RequestVoteResponse == 2
-AppendEntriesRequest == 3
-AppendEntriesResponse == 4
+CONSTANTS RequestVoteRequest, RequestVoteResponse,
+          AppendEntriesRequest, AppendEntriesResponse
 
 ----
 \* Global variables
@@ -99,16 +93,6 @@ vars == <<messages, allLogs, serverVars, candidateVars, leaderVars, logVars>>
 
 ----
 \* Helpers
-
-(* Cardinality( j ) == IF j = {}
-                    THEN 1
-                    ELSE 1 (* DEFINED FOR TYPE CHECKING ONLY *)
-SubSeq(s,m,n) == IF m > n
-                 THEN Tail(s)
-                 ELSE s
-SelectSeq(s, t) == IF t[Head(s)] = TRUE
-                   THEN s
-                   ELSE s *)
 
 \* The set of all quorums. This just calculates simple majorities, but the only
 \* important property is that every quorum overlaps with every other.
